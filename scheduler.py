@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -8,7 +9,12 @@ import db
 from config import DATABASE_URL
 from messaging import send_late_period_alert, send_period_reminder
 
-scheduler = BackgroundScheduler(jobstores={"default": SQLAlchemyJobStore(url=DATABASE_URL)})
+BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
+
+scheduler = BackgroundScheduler(
+    jobstores={"default": SQLAlchemyJobStore(url=DATABASE_URL)},
+    timezone=BANGKOK_TZ,
+)
 scheduler.start()
 
 
@@ -47,6 +53,8 @@ def schedule_user_reminders(user_id, next_period):
         id=_late_job_id(user_id),
         replace_existing=True,
     )
+
+    return remind_days
 
 
 def remove_user_reminders(user_id):

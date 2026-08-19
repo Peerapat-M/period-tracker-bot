@@ -50,8 +50,7 @@ def process_and_reply(user_id, start_date, custom_cycle=None):
     fertile_end = ovulation + timedelta(days=1)
     test_date = ovulation + timedelta(days=12)
 
-    scheduler_module.schedule_user_reminders(user_id, next_period)
-    remind_days = db.get_user_remind_days(user_id)
+    remind_days = scheduler_module.schedule_user_reminders(user_id, next_period)
 
     return messaging.create_prediction_flex(
         start_date, next_period, ovulation, fertile_start, fertile_end, test_date, avg_cycle, remind_days
@@ -137,11 +136,15 @@ def handle_message(event):
 
     elif user_text_lower.startswith("pair "):
         target_partner_id = user_text[5:].strip()
-        if target_partner_id and len(target_partner_id) > MIN_PARTNER_ID_LENGTH:
-            db.link_partner(user_id, target_partner_id)
+        if target_partner_id == user_id:
+            reply_msg = messaging.TextMessage(text="❌ ไม่สามารถผูกบัญชีกับตัวเองได้ค่ะ กรุณาส่ง ID ของแฟนมาแทนนะคะ")
+        elif target_partner_id and len(target_partner_id) > MIN_PARTNER_ID_LENGTH:
+            # target_partner_id is the person being tracked (who shared their ID);
+            # user_id (whoever sent this "pair" message) becomes their notified partner.
+            db.link_partner(target_partner_id, user_id)
             reply_msg = messaging.TextMessage(
                 text="🎉 ผูกบัญชีกับคนรักเรียบร้อยแล้วค่ะ!\n"
-                     "เมื่อถึงกำหนดเตือนรอบเดือน ระบบจะยิงข้อความ Care Mode ไปสะกิดแฟนคุณให้อัตโนมัตินะคะ 💕",
+                     "เมื่อถึงกำหนดเตือนรอบเดือนของแฟนคุณ ระบบจะส่งข้อความ Care Mode มาสะกิดให้อัตโนมัตินะคะ 💕",
                 quick_reply=messaging.get_calendar_quick_reply(),
             )
         else:

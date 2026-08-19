@@ -97,6 +97,13 @@ def create_prediction_flex(latest_date, next_period, ovulation, fertile_start, f
                 {
                     "type": "box", "layout": "horizontal", "margin": "md",
                     "contents": [
+                        {"type": "text", "text": "🩸 บันทึกวันแรกไว้ว่า", "size": "sm", "color": "#555555", "flex": 3},
+                        {"type": "text", "text": latest_date.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2},
+                    ],
+                },
+                {
+                    "type": "box", "layout": "horizontal", "margin": "md",
+                    "contents": [
                         {"type": "text", "text": "🥚 วันไข่ตกโดยประมาณ", "size": "sm", "color": "#555555", "flex": 3},
                         {"type": "text", "text": ovulation.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2},
                     ],
