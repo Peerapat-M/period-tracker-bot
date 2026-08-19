@@ -101,10 +101,11 @@ def handle_message(event):
                 quick_reply=messaging.get_calendar_quick_reply(),
             )
         else:
+            pair_link = messaging.build_pair_deep_link(user_id)
             reply_msg = messaging.TextMessage(
                 text=f"👩‍❤️‍👨 [Care Mode - แชร์ข้อมูลให้คนรัก]\n\n"
-                     f"ส่งข้อความคำสั่งด้านล่างนี้ไปให้แฟนนำมาพิมพ์ใส่บอทได้เลยนะคะ:\n\n"
-                     f"pair {user_id}\n\n"
+                     f"กดส่งต่อ (Forward) ข้อความนี้ หรือแชร์ลิงก์ด้านล่างให้แฟนได้เลยนะคะ พอแฟนกดลิงก์ แชทกับบอทจะเปิดขึ้นมาพร้อมข้อความผูกบัญชีให้พร้อมกดส่งเลยค่ะ:\n\n"
+                     f"{pair_link}\n\n"
                      f"📌 หรือหากคุณได้ ID จากแฟนมาแล้ว ให้พิมพ์ตอบกลับมาในรูปแบบ: pair USER_ID",
                 quick_reply=messaging.get_calendar_quick_reply(),
             )

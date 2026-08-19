@@ -7,6 +7,10 @@ CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# The bot's LINE Official Account basic ID (the "@..." handle), used to build
+# oaMessage deep links that open a chat with this bot with text pre-filled.
+LINE_OA_ID = os.getenv("LINE_OA_ID", "@569bwxwh")
+
 # SQLAlchemy (used by the scheduler jobstore) requires the postgresql:// scheme.
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)

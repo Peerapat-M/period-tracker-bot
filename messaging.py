@@ -1,4 +1,5 @@
 from datetime import datetime
+from urllib.parse import quote
 
 from linebot.v3.messaging import (
     ApiClient,
@@ -16,7 +17,12 @@ from linebot.v3.messaging import (
 )
 
 import db
-from config import configuration
+from config import LINE_OA_ID, configuration
+
+
+def build_pair_deep_link(user_id):
+    prefilled_text = quote(f"pair {user_id}", safe="")
+    return f"https://line.me/R/oaMessage/{LINE_OA_ID}/?{prefilled_text}"
 
 
 # ----------------------------------------------------
