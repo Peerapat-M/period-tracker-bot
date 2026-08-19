@@ -7,12 +7,17 @@ from linebot.v3.messaging import (
     TextMessage,
 )
 
-CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "JsgwYXflC6+dfFYEjJeFhNO82OyMl92RyP8Ci4/GqATRbL8ARe9avr9jRCpow/E+gyTuyBDKA9cBkUBAObiMezQp2veQeuBHs2NZ1/LVbjsOVjJfFnfem6btIO0ty+EQMngegAdMQpoWhdkijDoyHwdB04t89/1O/w1cDnyilFU=")
-TARGET_USER_ID = "Ue1997aea6e3cea510c0f5f2a93084ffb"  # นำ User ID ของคุณมาใส่ตรงนี้
+CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+TARGET_USER_ID = os.getenv("TEST_USER_ID")
 
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 
 def send_test_notification():
+    if not CHANNEL_ACCESS_TOKEN or not TARGET_USER_ID:
+        raise SystemExit(
+            "Set LINE_CHANNEL_ACCESS_TOKEN and TEST_USER_ID environment variables before running this script."
+        )
+
     msg = TextMessage(text="🔔 [ทดสอบการแจ้งเตือน]\nประจำเดือนของคุณคาดว่าจะมาในอีก 3 วันข้างหน้านะครับ! 🌸")
     
     with ApiClient(configuration) as api_client:

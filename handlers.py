@@ -1,0 +1,216 @@
+import re
+from datetime import datetime, timedelta
+
+from linebot.v3.webhooks import (
+    FollowEvent,
+    MessageEvent,
+    PostbackEvent,
+    TextMessageContent,
+)
+
+import db
+import messaging
+import scheduler as scheduler_module
+from config import handler
+
+MIN_PARTNER_ID_LENGTH = 10
+
+
+def parse_date_input(text):
+    text = text.strip()
+    match = re.match(r"^(\d{1,2})[/\-\. ](\d{1,2})[/\-\. ](\d{4})(?:\s+(\d{1,2}))?$", text)
+    if not match:
+        return None, None
+
+    day, month, year, custom_cycle = match.groups()
+    day, month, year = int(day), int(month), int(year)
+    custom_cycle = int(custom_cycle) if custom_cycle else None
+
+    if year > 2500:
+        year -= 543
+
+    try:
+        parsed_date = datetime(year, month, day)
+        return parsed_date, custom_cycle
+    except ValueError:
+        return None, None
+
+
+def process_and_reply(user_id, start_date, custom_cycle=None):
+    db.save_period_log(user_id, start_date.strftime("%Y-%m-%d"))
+
+    if custom_cycle and 20 <= custom_cycle <= 45:
+        avg_cycle = custom_cycle
+    else:
+        avg_cycle = db.calculate_avg_cycle(user_id)
+
+    next_period = start_date + timedelta(days=avg_cycle)
+    ovulation = next_period - timedelta(days=14)
+    fertile_start = ovulation - timedelta(days=5)
+    fertile_end = ovulation + timedelta(days=1)
+    test_date = ovulation + timedelta(days=12)
+
+    scheduler_module.schedule_user_reminders(user_id, next_period)
+    remind_days = db.get_user_remind_days(user_id)
+
+    return messaging.create_prediction_flex(
+        start_date, next_period, ovulation, fertile_start, fertile_end, test_date, avg_cycle, remind_days
+    )
+
+
+@handler.add(FollowEvent)
+def handle_follow(event):
+    welcome_text = (
+        "สวัสดีค่ะ! ยินดีต้อนรับสู่ระบบบันทึกรอบเดือน 🌸\n\n"
+        "คุณสามารถกดปุ่มเมนูด้านล่างเพื่อเริ่มใช้งานได้เลยนะคะ 😊"
+    )
+    messaging.send_reply(
+        event.reply_token,
+        [messaging.TextMessage(text=welcome_text, quick_reply=messaging.get_calendar_quick_reply())],
+    )
+
+
+@handler.add(MessageEvent, message=TextMessageContent)
+def handle_message(event):
+    user_id = event.source.user_id
+    user_text = event.message.text.strip()
+    user_text_lower = user_text.lower()
+
+    if user_text in ["บันทึกรอบเดือน", "บันทึก", "เลือกวันจากปฏิทิน"]:
+        reply_msg = messaging.TextMessage(
+            text="🗓️ เลือกวันแรกของรอบเดือนล่าสุดผ่านปฏิทินด้านล่าง หรือพิมพ์ระบุวันที่ เช่น 01/08/2026 ได้เลยค่ะ",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+
+    elif user_text in ["ดูประวัติ", "ประวัติ", "history", "เช็คประวัติ"]:
+        history_flex = messaging.create_history_flex(user_id)
+        if history_flex:
+            reply_msg = history_flex
+        else:
+            reply_msg = messaging.TextMessage(
+                text="ยังไม่พบประวัติการบันทึกค่ะ เลือกกด 'บันทึกรอบเดือน' เพื่อเริ่มบันทึกได้เลยนะคะ 😊",
+                quick_reply=messaging.get_calendar_quick_reply(),
+            )
+
+    elif user_text in ["แชร์ให้แฟน", "ผูกบัญชีแฟน", "partner", "care mode"]:
+        partner_id = db.get_partner_id(user_id)
+        if partner_id:
+            reply_msg = messaging.TextMessage(
+                text=f"💕 บัญชีของคุณผูกกับคนรักเรียบร้อยแล้ว!\n"
+                     f"เมื่อถึงกำหนดเตือนล่วงหน้า บอทจะส่งข้อความ Care Mode ไปหาแฟนให้อัตโนมัตินะคะ 😊\n\n"
+                     f"หากต้องการยกเลิก ให้พิมพ์ว่า: 'ยกเลิกผูกแฟน'",
+                quick_reply=messaging.get_calendar_quick_reply(),
+            )
+        else:
+            reply_msg = messaging.TextMessage(
+                text=f"👩‍❤️‍👨 [Care Mode - แชร์ข้อมูลให้คนรัก]\n\n"
+                     f"ส่งข้อความคำสั่งด้านล่างนี้ไปให้แฟนนำมาพิมพ์ใส่บอทได้เลยนะคะ:\n\n"
+                     f"pair {user_id}\n\n"
+                     f"📌 หรือหากคุณได้ ID จากแฟนมาแล้ว ให้พิมพ์ตอบกลับมาในรูปแบบ: pair USER_ID",
+                quick_reply=messaging.get_calendar_quick_reply(),
+            )
+
+    elif user_text in ["แจ้งเตือน", "ตั้งค่าแจ้งเตือน", "ตั้งค่า", "settings"]:
+        current_days = db.get_user_remind_days(user_id)
+        reply_msg = messaging.TextMessage(
+            text=f"⚙️ [ตั้งค่าการแจ้งเตือน]\n\n"
+                 f"ปัจจุบันระบบจะเตือนล่วงหน้า {current_days} วัน (เวลา 09:00 น.)\n"
+                 f"ต้องการเปลี่ยนเป็นเตือนล่วงหน้ากี่วัน เลือกด้านล่างได้เลยนะคะ:",
+            quick_reply=messaging.get_settings_quick_reply(),
+        )
+
+    elif user_text in ["ลบรายการล่าสุด", "ลบข้อมูล", "ลบ", "delete"]:
+        if db.delete_last_log(user_id):
+            reply_msg = messaging.TextMessage(
+                text="ลบรายการล่าสุดเรียบร้อยแล้วค่ะ 🗑️\nกดปุ่ม 'ดูประวัติ' เพื่อดูรายการที่เหลือได้เลยนะคะ",
+                quick_reply=messaging.get_calendar_quick_reply(),
+            )
+        else:
+            reply_msg = messaging.TextMessage(text="ไม่พบข้อมูลให้ลบค่ะ 😊", quick_reply=messaging.get_calendar_quick_reply())
+
+    elif user_text in ["รีเซ็ตประวัติ", "รีเซ็ต", "reset", "ล้างข้อมูล"]:
+        reply_msg = messaging.TextMessage(
+            text="⚠️ คุณแน่ใจหรือไม่ว่าต้องการล้างประวัติรอบเดือนทั้งหมด?\n"
+                 "การดำเนินการนี้ไม่สามารถย้อนกลับได้ค่ะ",
+            quick_reply=messaging.get_confirm_reset_quick_reply(),
+        )
+
+    elif user_text_lower.startswith("pair "):
+        target_partner_id = user_text[5:].strip()
+        if target_partner_id and len(target_partner_id) > MIN_PARTNER_ID_LENGTH:
+            db.link_partner(user_id, target_partner_id)
+            reply_msg = messaging.TextMessage(
+                text="🎉 ผูกบัญชีกับคนรักเรียบร้อยแล้วค่ะ!\n"
+                     "เมื่อถึงกำหนดเตือนรอบเดือน ระบบจะยิงข้อความ Care Mode ไปสะกิดแฟนคุณให้อัตโนมัตินะคะ 💕",
+                quick_reply=messaging.get_calendar_quick_reply(),
+            )
+        else:
+            reply_msg = messaging.TextMessage(text="❌ รูปแบบ ID ไม่ถูกต้อง กรุณาเช็ก ID ของแฟนใหม่อีกครั้งนะคะ")
+
+    elif user_text in ["ยกเลิกผูกแฟน", "unpair"]:
+        db.unlink_partner(user_id)
+        reply_msg = messaging.TextMessage(
+            text="🗑️ ยกเลิกการผูกบัญชีกับแฟนเรียบร้อยแล้วค่ะ",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+
+    else:
+        parsed_date, custom_cycle = parse_date_input(user_text)
+        if parsed_date:
+            reply_msg = process_and_reply(user_id, parsed_date, custom_cycle)
+        else:
+            reply_msg = messaging.TextMessage(
+                text="ขออภัยค่ะ ระบบไม่เข้าใจคำสั่ง 🙏\n\n"
+                     "📌 สามารถใช้งานได้ง่ายๆ โดยกดเลือกเมนูบน Rich Menu ด้านล่างได้เลยค่ะ",
+                quick_reply=messaging.get_calendar_quick_reply(),
+            )
+
+    messaging.send_reply(event.reply_token, [reply_msg])
+
+
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    user_id = event.source.user_id
+    postback_data = event.postback.data
+
+    if postback_data == "action=select_date":
+        selected_date_str = event.postback.params.get("date")
+        if not selected_date_str:
+            return
+        start_date = datetime.strptime(selected_date_str, "%Y-%m-%d")
+        flex_message = process_and_reply(user_id, start_date)
+        messaging.send_reply(event.reply_token, [flex_message])
+
+    elif postback_data.startswith("action=set_remind"):
+        days = int(postback_data.split("days=")[1])
+        db.set_user_remind_days(user_id, days)
+
+        logs = db.get_user_logs(user_id, limit=1)
+        if logs:
+            latest_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
+            avg_cycle = db.calculate_avg_cycle(user_id)
+            next_period = latest_date + timedelta(days=avg_cycle)
+            scheduler_module.schedule_user_reminders(user_id, next_period)
+
+        reply_msg = messaging.TextMessage(
+            text=f"✅ ตั้งค่าเรียบร้อย! ระบบจะแจ้งเตือนล่วงหน้า {days} วัน ก่อนรอบเดือนถัดไปนะคะ 🌸",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+        messaging.send_reply(event.reply_token, [reply_msg])
+
+    elif postback_data == "action=confirm_reset":
+        db.reset_user_logs(user_id)
+        scheduler_module.remove_user_reminders(user_id)
+
+        reply_msg = messaging.TextMessage(
+            text="🧹 ล้างประวัติทั้งหมดเรียบร้อยแล้วค่ะ!\nคุณสามารถเริ่มบันทึกรอบเดือนใหม่ได้ทันทีนะคะ 😊",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+        messaging.send_reply(event.reply_token, [reply_msg])
+
+    elif postback_data == "action=cancel_reset":
+        reply_msg = messaging.TextMessage(
+            text="❌ ยกเลิกการล้างข้อมูลเรียบร้อยแล้ว ข้อมูลของคุณยังปลอดภัยอยู่ค่ะ 🌸",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+        messaging.send_reply(event.reply_token, [reply_msg])
