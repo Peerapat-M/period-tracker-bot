@@ -82,6 +82,20 @@ def get_confirm_reset_quick_reply():
 # ----------------------------------------------------
 # Flex Messages
 # ----------------------------------------------------
+def _info_row(icon, label, value, value_color=None):
+    value_text = {"type": "text", "text": value, "size": "sm", "weight": "bold", "align": "end", "flex": 3, "wrap": True}
+    if value_color:
+        value_text["color"] = value_color
+    return {
+        "type": "box", "layout": "horizontal", "margin": "md", "spacing": "sm",
+        "contents": [
+            {"type": "text", "text": icon, "size": "sm", "flex": 0},
+            {"type": "text", "text": label, "size": "sm", "color": "#555555", "flex": 4, "wrap": True},
+            value_text,
+        ],
+    }
+
+
 def create_prediction_flex(latest_date, next_period, ovulation, fertile_start, fertile_end, test_date, avg_cycle, remind_days):
     bubble_json = {
         "type": "bubble",
@@ -100,34 +114,14 @@ def create_prediction_flex(latest_date, next_period, ovulation, fertile_start, f
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {
-                    "type": "box", "layout": "horizontal", "margin": "md",
-                    "contents": [
-                        {"type": "text", "text": "🩸 บันทึกวันแรกไว้ว่า", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
-                        {"type": "text", "text": latest_date.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2, "wrap": True},
-                    ],
-                },
-                {
-                    "type": "box", "layout": "horizontal", "margin": "md",
-                    "contents": [
-                        {"type": "text", "text": "🥚 วันไข่ตกโดยประมาณ", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
-                        {"type": "text", "text": ovulation.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2, "wrap": True},
-                    ],
-                },
-                {
-                    "type": "box", "layout": "horizontal", "margin": "md",
-                    "contents": [
-                        {"type": "text", "text": "👶 ช่วงมีโอกาสตั้งครรภ์", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
-                        {"type": "text", "text": f"{fertile_start.strftime('%d/%m')} - {fertile_end.strftime('%d/%m/%Y')}", "size": "sm", "weight": "bold", "color": "#2E8B57", "align": "end", "flex": 3, "wrap": True},
-                    ],
-                },
-                {
-                    "type": "box", "layout": "horizontal", "margin": "md",
-                    "contents": [
-                        {"type": "text", "text": "🧪 เริ่มตรวจครรภ์ได้ตั้งแต่", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
-                        {"type": "text", "text": test_date.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "color": "#4169E1", "align": "end", "flex": 2, "wrap": True},
-                    ],
-                },
+                _info_row("🩸", "บันทึกวันแรกไว้ว่า", latest_date.strftime("%d/%m/%Y")),
+                _info_row("🥚", "วันไข่ตกโดยประมาณ", ovulation.strftime("%d/%m/%Y")),
+                _info_row(
+                    "👶", "ช่วงมีโอกาสตั้งครรภ์",
+                    f"{fertile_start.strftime('%d/%m')} - {fertile_end.strftime('%d/%m/%Y')}",
+                    value_color="#2E8B57",
+                ),
+                _info_row("🧪", "เริ่มตรวจครรภ์ได้ตั้งแต่", test_date.strftime("%d/%m/%Y"), value_color="#4169E1"),
                 {"type": "separator", "margin": "lg"},
                 {"type": "text", "text": f"ℹ️ รอบเดือนเฉลี่ย {avg_cycle} วัน | เตือนล่วงหน้า {remind_days} วัน", "size": "xs", "color": "#888888", "wrap": True, "align": "center", "margin": "md"},
                 {"type": "text", "text": "⚠️ เป็นเพียงการคาดการณ์ ควรใช้วิธีอื่นร่วมด้วยในการคุมกำเนิด", "size": "xs", "color": "#DC143C", "wrap": True, "align": "center", "margin": "xs"},
@@ -147,15 +141,7 @@ def create_history_flex(user_id):
     history_contents = []
     for log in logs:
         dt = datetime.strptime(log["start_date"], "%Y-%m-%d")
-        history_contents.append({
-            "type": "box",
-            "layout": "horizontal",
-            "margin": "sm",
-            "contents": [
-                {"type": "text", "text": "🩸 ประจำเดือนมาวันแรก", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
-                {"type": "text", "text": dt.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2, "wrap": True},
-            ],
-        })
+        history_contents.append(_info_row("🩸", "ประจำเดือนมาวันแรก", dt.strftime("%d/%m/%Y")))
 
     bubble_json = {
         "type": "bubble",
