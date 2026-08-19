@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -26,37 +27,31 @@ def schedule_user_reminders(user_id, next_period):
     reminder_date = next_period - timedelta(days=remind_days)
     reminder_datetime = datetime.combine(reminder_date, datetime.min.time()).replace(hour=9, minute=0)
 
-    job_id = _reminder_job_id(user_id)
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
-
     scheduler.add_job(
         send_period_reminder,
         "date",
         run_date=reminder_datetime,
         args=[user_id, next_period_str, remind_days],
-        id=job_id,
+        id=_reminder_job_id(user_id),
         replace_existing=True,
     )
 
     late_date = next_period + timedelta(days=2)
     late_datetime = datetime.combine(late_date, datetime.min.time()).replace(hour=10, minute=0)
 
-    late_job_id = _late_job_id(user_id)
-    if scheduler.get_job(late_job_id):
-        scheduler.remove_job(late_job_id)
-
     scheduler.add_job(
         send_late_period_alert,
         "date",
         run_date=late_datetime,
         args=[user_id, next_period_str],
-        id=late_job_id,
+        id=_late_job_id(user_id),
         replace_existing=True,
     )
 
 
 def remove_user_reminders(user_id):
     for job_id in (_reminder_job_id(user_id), _late_job_id(user_id)):
-        if scheduler.get_job(job_id):
+        try:
             scheduler.remove_job(job_id)
+        except JobLookupError:
+            pass
