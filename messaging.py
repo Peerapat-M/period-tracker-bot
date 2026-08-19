@@ -103,33 +103,33 @@ def create_prediction_flex(latest_date, next_period, ovulation, fertile_start, f
                 {
                     "type": "box", "layout": "horizontal", "margin": "md",
                     "contents": [
-                        {"type": "text", "text": "🩸 บันทึกวันแรกไว้ว่า", "size": "sm", "color": "#555555", "flex": 3},
-                        {"type": "text", "text": latest_date.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2},
+                        {"type": "text", "text": "🩸 บันทึกวันแรกไว้ว่า", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
+                        {"type": "text", "text": latest_date.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2, "wrap": True},
                     ],
                 },
                 {
                     "type": "box", "layout": "horizontal", "margin": "md",
                     "contents": [
-                        {"type": "text", "text": "🥚 วันไข่ตกโดยประมาณ", "size": "sm", "color": "#555555", "flex": 3},
-                        {"type": "text", "text": ovulation.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2},
+                        {"type": "text", "text": "🥚 วันไข่ตกโดยประมาณ", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
+                        {"type": "text", "text": ovulation.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2, "wrap": True},
                     ],
                 },
                 {
                     "type": "box", "layout": "horizontal", "margin": "md",
                     "contents": [
-                        {"type": "text", "text": "👶 ช่วงมีโอกาสตั้งครรภ์", "size": "sm", "color": "#555555", "flex": 3},
-                        {"type": "text", "text": f"{fertile_start.strftime('%d/%m')} - {fertile_end.strftime('%d/%m/%Y')}", "size": "sm", "weight": "bold", "color": "#2E8B57", "align": "end", "flex": 3},
+                        {"type": "text", "text": "👶 ช่วงมีโอกาสตั้งครรภ์", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
+                        {"type": "text", "text": f"{fertile_start.strftime('%d/%m')} - {fertile_end.strftime('%d/%m/%Y')}", "size": "sm", "weight": "bold", "color": "#2E8B57", "align": "end", "flex": 3, "wrap": True},
                     ],
                 },
                 {
                     "type": "box", "layout": "horizontal", "margin": "md",
                     "contents": [
-                        {"type": "text", "text": "🧪 เริ่มตรวจครรภ์ได้ตั้งแต่", "size": "sm", "color": "#555555", "flex": 3},
-                        {"type": "text", "text": test_date.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "color": "#4169E1", "align": "end", "flex": 2},
+                        {"type": "text", "text": "🧪 เริ่มตรวจครรภ์ได้ตั้งแต่", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
+                        {"type": "text", "text": test_date.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "color": "#4169E1", "align": "end", "flex": 2, "wrap": True},
                     ],
                 },
                 {"type": "separator", "margin": "lg"},
-                {"type": "text", "text": f"ℹ️ รอบเดือนเฉลี่ย {avg_cycle} วัน | เตือนล่วงหน้า {remind_days} วัน", "size": "xs", "color": "#888888", "align": "center", "margin": "md"},
+                {"type": "text", "text": f"ℹ️ รอบเดือนเฉลี่ย {avg_cycle} วัน | เตือนล่วงหน้า {remind_days} วัน", "size": "xs", "color": "#888888", "wrap": True, "align": "center", "margin": "md"},
                 {"type": "text", "text": "⚠️ เป็นเพียงการคาดการณ์ ควรใช้วิธีอื่นร่วมด้วยในการคุมกำเนิด", "size": "xs", "color": "#DC143C", "wrap": True, "align": "center", "margin": "xs"},
             ],
         },
@@ -152,8 +152,8 @@ def create_history_flex(user_id):
             "layout": "horizontal",
             "margin": "sm",
             "contents": [
-                {"type": "text", "text": "🩸 ประจำเดือนมาวันแรก", "size": "sm", "color": "#555555"},
-                {"type": "text", "text": dt.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end"},
+                {"type": "text", "text": "🩸 ประจำเดือนมาวันแรก", "size": "sm", "color": "#555555", "flex": 3, "wrap": True},
+                {"type": "text", "text": dt.strftime("%d/%m/%Y"), "size": "sm", "weight": "bold", "align": "end", "flex": 2, "wrap": True},
             ],
         })
 
@@ -165,7 +165,7 @@ def create_history_flex(user_id):
             "layout": "vertical",
             "contents": [
                 {"type": "text", "text": "📋 ประวัติการบันทึกรอบเดือน", "weight": "bold", "color": "#D87093", "size": "md"},
-                {"type": "text", "text": f"รอบเดือนเฉลี่ยปัจจุบัน: {avg_cycle} วัน", "size": "xs", "color": "#888888", "margin": "xs"},
+                {"type": "text", "text": f"รอบเดือนเฉลี่ยปัจจุบัน: {avg_cycle} วัน", "size": "xs", "color": "#888888", "wrap": True, "margin": "xs"},
             ],
             "backgroundColor": "#FFF0F5",
         },
@@ -178,7 +178,7 @@ def create_history_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {"type": "text", "text": "💡 กดปุ่ม 'ลบรายการล่าสุด' บน Rich Menu เพื่อลบข้อมูลล่าสุด", "size": "xs", "color": "#888888", "align": "center"},
+                {"type": "text", "text": "💡 กดปุ่ม 'ลบรายการล่าสุด' บน Rich Menu เพื่อลบข้อมูลล่าสุด", "size": "xs", "color": "#888888", "wrap": True, "align": "center"},
             ],
         },
     }
