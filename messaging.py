@@ -190,7 +190,7 @@ def create_history_flex(user_id):
 # ----------------------------------------------------
 def send_period_reminder(user_id, next_period_str, days_before):
     user_msg = TextMessage(
-        text=f"🔔 [แจ้งเตือนล่วงหน้า]\n\n"
+        text=f"🔔 แจ้งเตือนล่วงหน้า\n\n"
              f"อีก {days_before} วันจะถึงกำหนดรอบเดือนถัดไปของคุณแล้วนะคะ! ({next_period_str})\n"
              f"อย่าลืมเตรียมพกผ้าอนามัยไว้ล่วงหน้านะคะ 🌸",
         quick_reply=get_calendar_quick_reply(),
@@ -205,7 +205,7 @@ def send_period_reminder(user_id, next_period_str, days_before):
         return
 
     partner_msg = TextMessage(
-        text=f"🌸 [Care Mode - แจ้งเตือนคนรัก]\n\n"
+        text=f"🌸 Care Mode แจ้งเตือนคนรัก\n\n"
              f"อีก {days_before} วันจะถึงกำหนดรอบเดือนของแฟนคุณแล้วนะคะ ({next_period_str})\n\n"
              f"💡 คำแนะนำในการดูแล:\n"
              f"• เตรียมกระเป๋าน้ำร้อนหรือเครื่องดื่มอุ่นๆ ไว้ให้\n"
@@ -219,7 +219,7 @@ def send_period_reminder(user_id, next_period_str, days_before):
 
 def send_late_period_alert(user_id, next_period_str):
     msg = TextMessage(
-        text=f"❓ [ติดตามรอบเดือน]\n\n"
+        text=f"❓ ติดตามรอบเดือน\n\n"
              f"รอบเดือนของคุณคาดว่าจะมาตั้งแต่วันที่ {next_period_str} (เลทมา 2 วันแล้ว)\n"
              f"ประจำเดือนมาหรือยังคะ? สามารถกดบันทึกวันแรกผ่านปฏิทินได้เลยนะคะ 🌸",
         quick_reply=get_calendar_quick_reply(),

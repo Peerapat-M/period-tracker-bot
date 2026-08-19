@@ -103,7 +103,7 @@ def handle_message(event):
         else:
             pair_link = messaging.build_pair_deep_link(user_id)
             reply_msg = messaging.TextMessage(
-                text=f"👩‍❤️‍👨 [Care Mode - แชร์ข้อมูลให้คนรัก]\n\n"
+                text=f"👩‍❤️‍👨 Care Mode แชร์ข้อมูลให้คนรัก\n\n"
                      f"กดส่งต่อ (Forward) ข้อความนี้ หรือแชร์ลิงก์ด้านล่างให้แฟนได้เลยนะคะ พอแฟนกดลิงก์ แชทกับบอทจะเปิดขึ้นมาพร้อมข้อความผูกบัญชีให้พร้อมกดส่งเลยค่ะ:\n\n"
                      f"{pair_link}\n\n"
                      f"📌 หรือหากคุณได้ ID จากแฟนมาแล้ว ให้พิมพ์ตอบกลับมาในรูปแบบ: pair USER_ID",
@@ -113,8 +113,8 @@ def handle_message(event):
     elif user_text in ["แจ้งเตือน", "ตั้งค่าแจ้งเตือน", "ตั้งค่า", "settings"]:
         current_days = db.get_user_remind_days(user_id)
         reply_msg = messaging.TextMessage(
-            text=f"⚙️ [ตั้งค่าการแจ้งเตือน]\n\n"
-                 f"ปัจจุบันระบบจะเตือนล่วงหน้า {current_days} วัน (เวลา 09:00 น.)\n"
+            text=f"⚙️ ตั้งค่าการแจ้งเตือน\n\n"
+                 f"ปัจจุบันบอทจะเตือนล่วงหน้า {current_days} วัน (เวลา 09:00 น.)\n"
                  f"ต้องการเปลี่ยนเป็นเตือนล่วงหน้ากี่วัน เลือกด้านล่างได้เลยนะคะ:",
             quick_reply=messaging.get_settings_quick_reply(),
         )
@@ -145,7 +145,7 @@ def handle_message(event):
             db.link_partner(target_partner_id, user_id)
             reply_msg = messaging.TextMessage(
                 text="🎉 ผูกบัญชีกับคนรักเรียบร้อยแล้วค่ะ!\n"
-                     "เมื่อถึงกำหนดเตือนรอบเดือนของแฟนคุณ ระบบจะส่งข้อความ Care Mode มาสะกิดให้อัตโนมัตินะคะ 💕",
+                     "เมื่อถึงกำหนดเตือนรอบเดือนของแฟนคุณ บอทจะส่งข้อความ Care Mode มาสะกิดให้อัตโนมัตินะคะ 💕",
                 quick_reply=messaging.get_calendar_quick_reply(),
             )
         else:
@@ -164,7 +164,7 @@ def handle_message(event):
             reply_msg = process_and_reply(user_id, parsed_date, custom_cycle)
         else:
             reply_msg = messaging.TextMessage(
-                text="ขออภัยค่ะ ระบบไม่เข้าใจคำสั่ง 🙏\n\n"
+                text="ขออภัยค่ะ บอทไม่เข้าใจคำสั่ง 🙏\n\n"
                      "📌 สามารถใช้งานได้ง่ายๆ โดยกดเลือกเมนูบน Rich Menu ด้านล่างได้เลยค่ะ",
                 quick_reply=messaging.get_calendar_quick_reply(),
             )
@@ -207,7 +207,7 @@ def handle_postback(event):
             scheduler_module.schedule_user_reminders(user_id, next_period)
 
         reply_msg = messaging.TextMessage(
-            text=f"✅ ตั้งค่าเรียบร้อย! ระบบจะแจ้งเตือนล่วงหน้า {days} วัน ก่อนรอบเดือนถัดไปนะคะ 🌸",
+            text=f"✅ ตั้งค่าเรียบร้อย! บอทจะแจ้งเตือนล่วงหน้า {days} วัน ก่อนรอบเดือนถัดไปนะคะ 🌸",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
         messaging.send_reply(event.reply_token, [reply_msg])
