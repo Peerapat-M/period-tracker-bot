@@ -168,6 +168,16 @@ def handle_message(event):
     messaging.send_reply(event.reply_token, [reply_msg])
 
 
+@handler.add(MessageEvent)
+def handle_unsupported_message(event):
+    reply_msg = messaging.TextMessage(
+        text="ขออภัยค่ะ ตอนนี้บอทยังไม่รองรับข้อความประเภทนี้ 🙏\n\n"
+             "📌 สามารถใช้งานได้ง่ายๆ โดยกดเลือกเมนูบน Rich Menu ด้านล่างได้เลยค่ะ",
+        quick_reply=messaging.get_calendar_quick_reply(),
+    )
+    messaging.send_reply(event.reply_token, [reply_msg])
+
+
 @handler.add(PostbackEvent)
 def handle_postback(event):
     user_id = event.source.user_id
