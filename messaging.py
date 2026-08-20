@@ -55,6 +55,7 @@ def get_calendar_quick_reply():
                     max=datetime.now().strftime("%Y-%m-%d"),
                 )
             ),
+            QuickReplyItem(action=MessageAction(label="พยากรณ์ล่าสุด", text="พยากรณ์ล่าสุด")),
             QuickReplyItem(action=MessageAction(label="ดูประวัติ", text="ดูประวัติ")),
             QuickReplyItem(action=MessageAction(label="แชร์ให้แฟน", text="แชร์ให้แฟน")),
             QuickReplyItem(action=MessageAction(label="แจ้งเตือน", text="แจ้งเตือน")),
