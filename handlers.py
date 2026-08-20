@@ -81,18 +81,32 @@ def process_and_reply(user_id, start_date, custom_cycle=None):
     )
 
 
+def _reschedule_reminders(user_id):
+    """Recompute predictions from the user's latest log and reschedule reminders.
+
+    Returns True if a log existed to reschedule from, False otherwise.
+    """
+    logs = db.get_user_logs(user_id, limit=1)
+    if not logs:
+        return False
+
+    latest_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
+    _, next_period, _, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
+        user_id, latest_date
+    )
+    scheduler_module.schedule_user_reminders(
+        user_id, next_period, fertile_start, fertile_end, test_date
+    )
+    return True
+
+
 def _reschedule_or_clear_reminders(user_id):
-    remaining_logs = db.get_user_logs(user_id, limit=1)
-    if remaining_logs:
-        latest_date = datetime.strptime(remaining_logs[0]["start_date"], "%Y-%m-%d")
-        _, next_period, _, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
-            user_id, latest_date
-        )
-        scheduler_module.schedule_user_reminders(
-            user_id, next_period, fertile_start, fertile_end, test_date
-        )
-    else:
+    if not _reschedule_reminders(user_id):
         scheduler_module.remove_user_reminders(user_id)
+
+
+def _parse_postback_params(postback_data):
+    return dict(p.split("=", 1) for p in postback_data.split("&"))
 
 
 def show_latest_prediction(user_id):
@@ -272,16 +286,7 @@ def handle_postback(event):
             return
         hour = int(selected_time_str.split(":")[0])
         db.set_user_remind_hour(user_id, hour)
-
-        logs = db.get_user_logs(user_id, limit=1)
-        if logs:
-            latest_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
-            _, next_period, _, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
-                user_id, latest_date
-            )
-            scheduler_module.schedule_user_reminders(
-                user_id, next_period, fertile_start, fertile_end, test_date
-            )
+        _reschedule_reminders(user_id)
 
         reply_msg = messaging.TextMessage(
             text=f"✅ ตั้งค่าเรียบร้อย! น้องบอทจะแจ้งเตือนเวลา {hour:02d}:00 น. นะคะ 🌸",
@@ -292,16 +297,7 @@ def handle_postback(event):
     elif postback_data.startswith("action=set_remind"):
         days = int(postback_data.split("days=")[1])
         db.set_user_remind_days(user_id, days)
-
-        logs = db.get_user_logs(user_id, limit=1)
-        if logs:
-            latest_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
-            _, next_period, _, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
-                user_id, latest_date
-            )
-            scheduler_module.schedule_user_reminders(
-                user_id, next_period, fertile_start, fertile_end, test_date
-            )
+        _reschedule_reminders(user_id)
 
         reply_msg = messaging.TextMessage(
             text=f"✅ ตั้งค่าเรียบร้อย! น้องบอทจะแจ้งเตือนล่วงหน้า {days} วัน ก่อนรอบเดือนถัดไปนะคะ 🌸",
@@ -328,7 +324,7 @@ def handle_postback(event):
         messaging.send_reply(event.reply_token, [reply_msg])
 
     elif postback_data.startswith("action=select_delete"):
-        params = dict(p.split("=", 1) for p in postback_data.split("&"))
+        params = _parse_postback_params(postback_data)
         display_date = datetime.strptime(params["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
         reply_msg = messaging.TextMessage(
             text=f"⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบรายการวันที่ {display_date}?\n"
@@ -338,7 +334,7 @@ def handle_postback(event):
         messaging.send_reply(event.reply_token, [reply_msg])
 
     elif postback_data.startswith("action=confirm_delete_specific"):
-        params = dict(p.split("=", 1) for p in postback_data.split("&"))
+        params = _parse_postback_params(postback_data)
         if db.delete_log_by_id(user_id, int(params["id"])):
             _reschedule_or_clear_reminders(user_id)
             reply_msg = messaging.TextMessage(

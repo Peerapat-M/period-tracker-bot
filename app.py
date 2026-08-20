@@ -1,3 +1,4 @@
+import logging
 import os
 
 from flask import Flask, abort, request
@@ -7,12 +8,14 @@ import db
 import handlers  # noqa: F401  (registers webhook event handlers on import)
 from config import handler
 
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
 
 try:
     db.init_db()
-except Exception as e:
-    print(f"Database Init Exception: {e}")
+except Exception:
+    logger.exception("Database Init Exception")
 
 
 @app.route("/callback", methods=["POST"])

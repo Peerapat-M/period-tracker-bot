@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
@@ -19,6 +20,8 @@ from linebot.v3.messaging import (
 import db
 from config import BANGKOK_TZ, LINE_OA_ID, MAX_PERIOD_LOG_BACKDATE_DAYS, configuration
 
+logger = logging.getLogger(__name__)
+
 
 def build_pair_deep_link(user_id):
     prefilled_text = quote(f"pair {user_id}", safe="")
@@ -38,6 +41,13 @@ def send_reply(reply_token, messages):
         MessagingApi(api_client).reply_message(
             ReplyMessageRequest(reply_token=reply_token, messages=messages)
         )
+
+
+def _safe_push(to, messages, failure_label):
+    try:
+        send_push(to, messages)
+    except Exception:
+        logger.exception("ส่ง%sล้มเหลว", failure_label)
 
 
 # ----------------------------------------------------
@@ -232,10 +242,7 @@ def send_period_reminder(user_id, next_period_str, days_before):
              f"อย่าลืมเตรียมพกผ้าอนามัยไว้ล่วงหน้านะคะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    try:
-        send_push(user_id, [user_msg])
-    except Exception as e:
-        print(f"❌ ส่งแจ้งเตือนล้มเหลว: {e}")
+    _safe_push(user_id, [user_msg], "แจ้งเตือน")
 
     partner_id = db.get_partner_id(user_id)
     if not partner_id:
@@ -248,10 +255,7 @@ def send_period_reminder(user_id, next_period_str, days_before):
              f"• เตรียมกระเป๋าน้ำร้อนหรือเครื่องดื่มอุ่นๆ ไว้ให้\n"
              f"• ช่วยซัพพอร์ตและคอยเอาใจใส่เป็นพิเศษในช่วงนี้นะคะ 💕"
     )
-    try:
-        send_push(partner_id, [partner_msg])
-    except Exception as e:
-        print(f"❌ ส่ง Care Mode หาแฟนล้มเหลว: {e}")
+    _safe_push(partner_id, [partner_msg], "Care Mode หาแฟน")
 
 
 def send_late_period_alert(user_id, next_period_str):
@@ -261,10 +265,7 @@ def send_late_period_alert(user_id, next_period_str):
              f"ประจำเดือนมาหรือยังคะ? สามารถกดบันทึกวันแรกผ่านปฏิทินได้เลยนะคะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    try:
-        send_push(user_id, [msg])
-    except Exception as e:
-        print(f"❌ ส่งแจ้งเตือนรอบเดือนเลทล้มเหลว: {e}")
+    _safe_push(user_id, [msg], "แจ้งเตือนรอบเดือนเลท")
 
 
 def send_fertile_window_alert(user_id, fertile_start_str, fertile_end_str):
@@ -274,10 +275,7 @@ def send_fertile_window_alert(user_id, fertile_start_str, fertile_end_str):
              f"หากกำลังวางแผนมีบุตรหรือคุมกำเนิด ควรวางแผนล่วงหน้าในช่วงนี้ค่ะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    try:
-        send_push(user_id, [msg])
-    except Exception as e:
-        print(f"❌ ส่งแจ้งเตือนช่วงไข่ตกล้มเหลว: {e}")
+    _safe_push(user_id, [msg], "แจ้งเตือนช่วงไข่ตก")
 
 
 def send_test_date_alert(user_id, test_date_str):
@@ -287,7 +285,4 @@ def send_test_date_alert(user_id, test_date_str):
              f"หากผลตรวจไม่ชัดเจน ลองตรวจซ้ำอีกครั้งในอีกไม่กี่วันได้ค่ะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    try:
-        send_push(user_id, [msg])
-    except Exception as e:
-        print(f"❌ ส่งแจ้งเตือนวันตรวจครรภ์ล้มเหลว: {e}")
+    _safe_push(user_id, [msg], "แจ้งเตือนวันตรวจครรภ์")
