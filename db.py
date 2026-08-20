@@ -41,6 +41,15 @@ def init_db():
                 )
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_usage_log (
+                    id SERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
             conn.commit()
     finally:
         conn.close()
@@ -168,6 +177,32 @@ def unlink_partner(user_id):
     try:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM partners WHERE user_id = %s", (user_id,))
+            conn.commit()
+    finally:
+        conn.close()
+
+
+# ----------------------------------------------------
+# AI Usage
+# ----------------------------------------------------
+def count_ai_requests_today(user_id):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS count FROM ai_usage_log WHERE user_id = %s AND created_at >= CURRENT_DATE",
+                (user_id,),
+            )
+            return cur.fetchone()["count"]
+    finally:
+        conn.close()
+
+
+def log_ai_request(user_id):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO ai_usage_log (user_id) VALUES (%s)", (user_id,))
             conn.commit()
     finally:
         conn.close()

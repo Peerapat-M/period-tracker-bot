@@ -6,6 +6,7 @@ from linebot.v3.messaging import Configuration
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # The bot's LINE Official Account basic ID (the "@..." handle), used to build
 # oaMessage deep links that open a chat with this bot with text pre-filled.

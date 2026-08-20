@@ -8,6 +8,7 @@ from linebot.v3.webhooks import (
     TextMessageContent,
 )
 
+import ai_chat
 import db
 import messaging
 import scheduler as scheduler_module
@@ -172,11 +173,18 @@ def handle_message(event):
         if parsed_date:
             reply_msg = process_and_reply(user_id, parsed_date, custom_cycle)
         else:
-            reply_msg = messaging.TextMessage(
-                text="ขออภัยค่ะ น้องบอทไม่เข้าใจคำสั่ง 🙏\n\n"
-                     "📌 สามารถใช้งานได้ง่ายๆ โดยกดเลือกเมนูบน Rich Menu ด้านล่างได้เลยค่ะ",
-                quick_reply=messaging.get_calendar_quick_reply(),
-            )
+            ai_reply = ai_chat.get_ai_reply(user_id, user_text)
+            if ai_reply:
+                reply_msg = messaging.TextMessage(
+                    text=ai_reply,
+                    quick_reply=messaging.get_calendar_quick_reply(),
+                )
+            else:
+                reply_msg = messaging.TextMessage(
+                    text="ขออภัยค่ะ น้องบอทไม่เข้าใจคำสั่ง 🙏\n\n"
+                         "📌 สามารถใช้งานได้ง่ายๆ โดยกดเลือกเมนูบน Rich Menu ด้านล่างได้เลยค่ะ",
+                    quick_reply=messaging.get_calendar_quick_reply(),
+                )
 
     messaging.send_reply(event.reply_token, [reply_msg])
 

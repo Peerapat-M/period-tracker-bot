@@ -4,3 +4,4 @@ APScheduler
 SQLAlchemy
 psycopg2-binary
 gunicorn
+google-genai
