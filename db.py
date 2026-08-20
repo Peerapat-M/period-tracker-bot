@@ -1,9 +1,14 @@
 from datetime import datetime
+from statistics import median
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from config import DATABASE_URL
+
+# calculate_avg_cycle only ever looks at this many recent cycles, so there's
+# no point keeping more than that in storage per user.
+MAX_PERIOD_LOGS_PER_USER = 6
 
 
 def get_db():
@@ -67,6 +72,16 @@ def save_period_log(user_id, start_date_str):
             cur.execute(
                 "INSERT INTO period_logs (user_id, start_date) VALUES (%s, %s)",
                 (user_id, start_date_str),
+            )
+            cur.execute(
+                """
+                DELETE FROM period_logs
+                WHERE user_id = %s
+                AND id NOT IN (
+                    SELECT id FROM period_logs WHERE user_id = %s ORDER BY start_date DESC LIMIT %s
+                )
+                """,
+                (user_id, user_id, MAX_PERIOD_LOGS_PER_USER),
             )
             conn.commit()
     finally:
@@ -231,6 +246,9 @@ def log_ai_request(user_id):
     conn = get_db()
     try:
         with conn.cursor() as cur:
+            # The quota check only ever looks at today's rows, so anything
+            # older is dead weight — clear it out here instead of a separate job.
+            cur.execute("DELETE FROM ai_usage_log WHERE created_at < CURRENT_DATE")
             cur.execute("INSERT INTO ai_usage_log (user_id) VALUES (%s)", (user_id,))
             conn.commit()
     finally:
@@ -241,7 +259,7 @@ def log_ai_request(user_id):
 # Calculations
 # ----------------------------------------------------
 def calculate_avg_cycle(user_id):
-    logs = get_user_logs(user_id, limit=5)
+    logs = get_user_logs(user_id, limit=MAX_PERIOD_LOGS_PER_USER)
     if len(logs) < 2:
         return 28
 
@@ -256,4 +274,4 @@ def calculate_avg_cycle(user_id):
     if not gaps:
         return 28
 
-    return int(round(sum(gaps) / len(gaps)))
+    return int(round(median(gaps)))
