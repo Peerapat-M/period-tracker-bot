@@ -51,6 +51,8 @@ def get_calendar_quick_reply():
                     label="📅 เลือกวันแรก",
                     data="action=select_date",
                     mode="date",
+                    initial=datetime.now().strftime("%Y-%m-%d"),
+                    max=datetime.now().strftime("%Y-%m-%d"),
                 )
             ),
             QuickReplyItem(action=MessageAction(label="ดูประวัติ", text="ดูประวัติ")),
@@ -114,17 +116,17 @@ def create_prediction_flex(latest_date, next_period, ovulation, fertile_start, f
             "type": "box",
             "layout": "vertical",
             "contents": [
-                _info_row("🩸", "บันทึกวันแรกไว้ว่า", latest_date.strftime("%d/%m/%Y")),
-                _info_row("🥚", "วันไข่ตกโดยประมาณ", ovulation.strftime("%d/%m/%Y")),
+                _info_row("🩸", "บันทึกวันแรกไว้ว่า", latest_date.strftime("%d/%m/%Y"), value_color="#C75B7A"),
+                _info_row("🥚", "วันไข่ตกโดยประมาณ", ovulation.strftime("%d/%m/%Y"), value_color="#7E60BF"),
                 _info_row(
                     "👶", "ช่วงมีโอกาสตั้งครรภ์",
                     f"{fertile_start.strftime('%d/%m')} - {fertile_end.strftime('%d/%m/%Y')}",
-                    value_color="#2E8B57",
+                    value_color="#D6336C",
                 ),
-                _info_row("🧪", "เริ่มตรวจครรภ์ได้ตั้งแต่", test_date.strftime("%d/%m/%Y"), value_color="#4169E1"),
+                _info_row("🧪", "เริ่มตรวจครรภ์ได้ตั้งแต่", test_date.strftime("%d/%m/%Y"), value_color="#5E35B1"),
                 {"type": "separator", "margin": "lg"},
                 {"type": "text", "text": f"ℹ️ รอบเดือนเฉลี่ย {avg_cycle} วัน | เตือนล่วงหน้า {remind_days} วัน", "size": "xs", "color": "#888888", "wrap": True, "align": "center", "margin": "md"},
-                {"type": "text", "text": "⚠️ เป็นเพียงการคาดการณ์ ควรใช้วิธีอื่นร่วมด้วยในการคุมกำเนิด", "size": "xs", "color": "#DC143C", "wrap": True, "align": "center", "margin": "xs"},
+                {"type": "text", "text": "⚠️ เป็นเพียงการคาดการณ์ ควรใช้วิธีอื่นร่วมด้วยในการคุมกำเนิด", "size": "xs", "color": "#A8467A", "wrap": True, "align": "center", "margin": "xs"},
             ],
         },
     }
@@ -145,7 +147,7 @@ def create_history_flex(user_id):
     history_contents = []
     for log in logs:
         dt = datetime.strptime(log["start_date"], "%Y-%m-%d")
-        history_contents.append(_info_row("🩸", "ประจำเดือนมาวันแรก", dt.strftime("%d/%m/%Y")))
+        history_contents.append(_info_row("🩸", "ประจำเดือนมาวันแรก", dt.strftime("%d/%m/%Y"), value_color="#C75B7A"))
 
     bubble_json = {
         "type": "bubble",

@@ -38,6 +38,12 @@ def parse_date_input(text):
 
 
 def process_and_reply(user_id, start_date, custom_cycle=None):
+    if start_date.date() > datetime.now().date():
+        return messaging.TextMessage(
+            text="❌ ไม่สามารถบันทึกวันที่ในอนาคตได้ค่ะ กรุณาเลือกวันแรกของรอบเดือนที่ผ่านมาแล้วนะคะ",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+
     db.save_period_log(user_id, start_date.strftime("%Y-%m-%d"))
 
     if custom_cycle and 20 <= custom_cycle <= 45:
