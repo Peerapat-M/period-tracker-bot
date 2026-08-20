@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from linebot.v3.messaging import (
@@ -17,7 +17,7 @@ from linebot.v3.messaging import (
 )
 
 import db
-from config import BANGKOK_TZ, LINE_OA_ID, configuration
+from config import BANGKOK_TZ, LINE_OA_ID, MAX_PERIOD_LOG_BACKDATE_DAYS, configuration
 
 
 def build_pair_deep_link(user_id):
@@ -52,6 +52,7 @@ def get_calendar_quick_reply():
                     data="action=select_date",
                     mode="date",
                     initial=datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
+                    min=(datetime.now(BANGKOK_TZ) - timedelta(days=MAX_PERIOD_LOG_BACKDATE_DAYS)).strftime("%Y-%m-%d"),
                     max=datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
                 )
             ),
@@ -98,14 +99,23 @@ def get_confirm_delete_quick_reply():
     )
 
 
+def get_confirm_delete_specific_quick_reply(log_id):
+    return QuickReply(
+        items=[
+            QuickReplyItem(action=PostbackAction(label="⚠️ ยืนยันลบ", data=f"action=confirm_delete_specific&id={log_id}")),
+            QuickReplyItem(action=PostbackAction(label="❌ ยกเลิก", data="action=cancel_delete_last")),
+        ]
+    )
+
+
 # ----------------------------------------------------
 # Flex Messages
 # ----------------------------------------------------
-def _info_row(icon, label, value, value_color=None):
+def _info_row(icon, label, value, value_color=None, action=None):
     value_text = {"type": "text", "text": value, "size": "sm", "weight": "bold", "align": "end", "flex": 3, "wrap": True}
     if value_color:
         value_text["color"] = value_color
-    return {
+    row = {
         "type": "box", "layout": "horizontal", "margin": "md", "spacing": "sm",
         "contents": [
             {"type": "text", "text": icon, "size": "sm", "flex": 0},
@@ -113,6 +123,9 @@ def _info_row(icon, label, value, value_color=None):
             value_text,
         ],
     }
+    if action:
+        row["action"] = action
+    return row
 
 
 def create_prediction_flex(latest_date, next_period, ovulation, fertile_start, fertile_end, test_date, avg_cycle, remind_days):
@@ -155,7 +168,7 @@ def create_prediction_flex(latest_date, next_period, ovulation, fertile_start, f
 
 
 def create_history_flex(user_id):
-    logs = db.get_user_logs(user_id, limit=5)
+    logs = db.get_user_logs(user_id, limit=db.MAX_PERIOD_LOGS_PER_USER)
     if not logs:
         return None
 
@@ -164,7 +177,18 @@ def create_history_flex(user_id):
     history_contents = []
     for log in logs:
         dt = datetime.strptime(log["start_date"], "%Y-%m-%d")
-        history_contents.append(_info_row("🩸", "ประจำเดือนมาวันแรก", dt.strftime("%d/%m/%Y"), value_color="#C75B7A"))
+        display_date = dt.strftime("%d/%m/%Y")
+        history_contents.append(
+            _info_row(
+                "🩸", "ประจำเดือนมาวันแรก", display_date, value_color="#C75B7A",
+                action={
+                    "type": "postback",
+                    "label": "ลบรายการนี้",
+                    "data": f"action=select_delete&id={log['id']}&date={log['start_date']}",
+                    "displayText": f"เลือกลบรายการวันที่ {display_date}",
+                },
+            )
+        )
 
     bubble_json = {
         "type": "bubble",
@@ -187,7 +211,7 @@ def create_history_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {"type": "text", "text": "💡 กดปุ่ม 'ลบรายการล่าสุด' บน Rich Menu เพื่อลบข้อมูลล่าสุด", "size": "xs", "color": "#888888", "wrap": True, "align": "center"},
+                {"type": "text", "text": "💡 กดที่รายการด้านบนเพื่อลบรายการนั้นได้เลยค่ะ", "size": "xs", "color": "#888888", "wrap": True, "align": "center"},
             ],
         },
     }

@@ -6,6 +6,11 @@ from linebot.v3.messaging import Configuration
 
 BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
 
+# How far back a user can log a period start date. Anything older than this
+# also falls outside MAX_PERIOD_LOGS_PER_USER's kept window in db.py, so
+# there's no point accepting it.
+MAX_PERIOD_LOG_BACKDATE_DAYS = 182
+
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")

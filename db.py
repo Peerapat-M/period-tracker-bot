@@ -119,6 +119,18 @@ def delete_last_log(user_id):
         conn.close()
 
 
+def delete_log_by_id(user_id, log_id):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM period_logs WHERE id = %s AND user_id = %s", (log_id, user_id))
+            deleted = cur.rowcount > 0
+            conn.commit()
+        return deleted
+    finally:
+        conn.close()
+
+
 def reset_user_logs(user_id):
     conn = get_db()
     try:
