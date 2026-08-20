@@ -37,15 +37,7 @@ def parse_date_input(text):
         return None, None
 
 
-def process_and_reply(user_id, start_date, custom_cycle=None):
-    if start_date.date() > datetime.now().date():
-        return messaging.TextMessage(
-            text="❌ ไม่สามารถบันทึกวันที่ในอนาคตได้ค่ะ กรุณาเลือกวันแรกของรอบเดือนที่ผ่านมาแล้วนะคะ",
-            quick_reply=messaging.get_calendar_quick_reply(),
-        )
-
-    db.save_period_log(user_id, start_date.strftime("%Y-%m-%d"))
-
+def calculate_cycle_prediction(user_id, start_date, custom_cycle=None):
     if custom_cycle and 20 <= custom_cycle <= 45:
         avg_cycle = custom_cycle
     else:
@@ -57,7 +49,42 @@ def process_and_reply(user_id, start_date, custom_cycle=None):
     fertile_end = ovulation + timedelta(days=1)
     test_date = ovulation + timedelta(days=12)
 
+    return avg_cycle, next_period, ovulation, fertile_start, fertile_end, test_date
+
+
+def process_and_reply(user_id, start_date, custom_cycle=None):
+    if start_date.date() > datetime.now().date():
+        return messaging.TextMessage(
+            text="❌ ไม่สามารถบันทึกวันที่ในอนาคตได้ค่ะ กรุณาเลือกวันแรกของรอบเดือนที่ผ่านมาแล้วนะคะ",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+
+    db.save_period_log(user_id, start_date.strftime("%Y-%m-%d"))
+
+    avg_cycle, next_period, ovulation, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
+        user_id, start_date, custom_cycle
+    )
+
     remind_days = scheduler_module.schedule_user_reminders(user_id, next_period)
+
+    return messaging.create_prediction_flex(
+        start_date, next_period, ovulation, fertile_start, fertile_end, test_date, avg_cycle, remind_days
+    )
+
+
+def show_latest_prediction(user_id):
+    logs = db.get_user_logs(user_id, limit=1)
+    if not logs:
+        return messaging.TextMessage(
+            text="ยังไม่พบประวัติการบันทึกค่ะ เลือกกด 'บันทึกรอบเดือน' เพื่อเริ่มบันทึกได้เลยนะคะ 😊",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+
+    start_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
+    avg_cycle, next_period, ovulation, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
+        user_id, start_date
+    )
+    remind_days = db.get_user_remind_days(user_id)
 
     return messaging.create_prediction_flex(
         start_date, next_period, ovulation, fertile_start, fertile_end, test_date, avg_cycle, remind_days
@@ -87,6 +114,9 @@ def handle_message(event):
             text="🗓️ เลือกวันแรกของรอบเดือนล่าสุดผ่านปฏิทินด้านล่าง หรือพิมพ์ระบุวันที่ เช่น 01/08/2026 ได้เลยค่ะ",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
+
+    elif user_text_lower in ["พยากรณ์ล่าสุด", "ดูพยากรณ์", "พยากรณ์", "การ์ดล่าสุด"]:
+        reply_msg = show_latest_prediction(user_id)
 
     elif user_text_lower in ["ดูประวัติ", "ประวัติ", "history", "เช็คประวัติ"]:
         history_flex = messaging.create_history_flex(user_id)
