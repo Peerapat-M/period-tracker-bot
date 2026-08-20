@@ -75,13 +75,13 @@ def handle_message(event):
     user_text = event.message.text.strip()
     user_text_lower = user_text.lower()
 
-    if user_text in ["บันทึกรอบเดือน", "บันทึก", "เลือกวันจากปฏิทิน"]:
+    if user_text_lower in ["บันทึกรอบเดือน", "บันทึก", "เลือกวันจากปฏิทิน"]:
         reply_msg = messaging.TextMessage(
             text="🗓️ เลือกวันแรกของรอบเดือนล่าสุดผ่านปฏิทินด้านล่าง หรือพิมพ์ระบุวันที่ เช่น 01/08/2026 ได้เลยค่ะ",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
 
-    elif user_text in ["ดูประวัติ", "ประวัติ", "history", "เช็คประวัติ"]:
+    elif user_text_lower in ["ดูประวัติ", "ประวัติ", "history", "เช็คประวัติ"]:
         history_flex = messaging.create_history_flex(user_id)
         if history_flex:
             reply_msg = history_flex
@@ -91,7 +91,7 @@ def handle_message(event):
                 quick_reply=messaging.get_calendar_quick_reply(),
             )
 
-    elif user_text in ["แชร์ให้แฟน", "ผูกบัญชีแฟน", "partner", "care mode"]:
+    elif user_text_lower in ["แชร์ให้แฟน", "ผูกบัญชีแฟน", "partner", "care mode"]:
         partner_id = db.get_partner_id(user_id)
         if partner_id:
             reply_msg = messaging.TextMessage(
@@ -110,7 +110,7 @@ def handle_message(event):
                 quick_reply=messaging.get_calendar_quick_reply(),
             )
 
-    elif user_text in ["แจ้งเตือน", "ตั้งค่าแจ้งเตือน", "ตั้งค่า", "settings"]:
+    elif user_text_lower in ["แจ้งเตือน", "ตั้งค่าแจ้งเตือน", "ตั้งค่า", "settings"]:
         current_days = db.get_user_remind_days(user_id)
         reply_msg = messaging.TextMessage(
             text=f"⚙️ ตั้งค่าการแจ้งเตือน\n\n"
@@ -119,8 +119,17 @@ def handle_message(event):
             quick_reply=messaging.get_settings_quick_reply(),
         )
 
-    elif user_text in ["ลบรายการล่าสุด", "ลบข้อมูล", "ลบ", "delete"]:
+    elif user_text_lower in ["ลบรายการล่าสุด", "ลบข้อมูล", "ลบ", "delete"]:
         if db.delete_last_log(user_id):
+            remaining_logs = db.get_user_logs(user_id, limit=1)
+            if remaining_logs:
+                latest_date = datetime.strptime(remaining_logs[0]["start_date"], "%Y-%m-%d")
+                avg_cycle = db.calculate_avg_cycle(user_id)
+                next_period = latest_date + timedelta(days=avg_cycle)
+                scheduler_module.schedule_user_reminders(user_id, next_period)
+            else:
+                scheduler_module.remove_user_reminders(user_id)
+
             reply_msg = messaging.TextMessage(
                 text="ลบรายการล่าสุดเรียบร้อยแล้วค่ะ 🗑️\nกดปุ่ม 'ดูประวัติ' เพื่อดูรายการที่เหลือได้เลยนะคะ",
                 quick_reply=messaging.get_calendar_quick_reply(),
@@ -128,7 +137,7 @@ def handle_message(event):
         else:
             reply_msg = messaging.TextMessage(text="ไม่พบข้อมูลให้ลบค่ะ 😊", quick_reply=messaging.get_calendar_quick_reply())
 
-    elif user_text in ["รีเซ็ตประวัติ", "รีเซ็ต", "reset", "ล้างข้อมูล"]:
+    elif user_text_lower in ["รีเซ็ตประวัติ", "รีเซ็ต", "reset", "ล้างข้อมูล"]:
         reply_msg = messaging.TextMessage(
             text="⚠️ คุณแน่ใจหรือไม่ว่าต้องการล้างประวัติรอบเดือนทั้งหมด?\n"
                  "การดำเนินการนี้ไม่สามารถย้อนกลับได้ค่ะ",
@@ -151,7 +160,7 @@ def handle_message(event):
         else:
             reply_msg = messaging.TextMessage(text="❌ รูปแบบ ID ไม่ถูกต้อง กรุณาเช็ก ID ของแฟนใหม่อีกครั้งนะคะ")
 
-    elif user_text in ["ยกเลิกผูกแฟน", "unpair"]:
+    elif user_text_lower in ["ยกเลิกผูกแฟน", "unpair"]:
         db.unlink_partner(user_id)
         reply_msg = messaging.TextMessage(
             text="🗑️ ยกเลิกการผูกบัญชีกับแฟนเรียบร้อยแล้วค่ะ",
