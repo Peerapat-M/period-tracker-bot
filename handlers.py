@@ -12,7 +12,7 @@ import ai_chat
 import db
 import messaging
 import scheduler as scheduler_module
-from config import handler
+from config import BANGKOK_TZ, handler
 
 MIN_PARTNER_ID_LENGTH = 10
 
@@ -53,7 +53,7 @@ def calculate_cycle_prediction(user_id, start_date, custom_cycle=None):
 
 
 def process_and_reply(user_id, start_date, custom_cycle=None):
-    if start_date.date() > datetime.now().date():
+    if start_date.date() > datetime.now(BANGKOK_TZ).date():
         return messaging.TextMessage(
             text="❌ ไม่สามารถบันทึกวันที่ในอนาคตได้ค่ะ กรุณาเลือกวันแรกของรอบเดือนที่ผ่านมาแล้วนะคะ",
             quick_reply=messaging.get_calendar_quick_reply(),

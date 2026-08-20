@@ -1,20 +1,17 @@
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import db
-from config import DATABASE_URL
+from config import BANGKOK_TZ, DATABASE_URL
 from messaging import (
     send_fertile_window_alert,
     send_late_period_alert,
     send_period_reminder,
     send_test_date_alert,
 )
-
-BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
 
 scheduler = BackgroundScheduler(
     jobstores={"default": SQLAlchemyJobStore(url=DATABASE_URL)},

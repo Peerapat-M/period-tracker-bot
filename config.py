@@ -1,7 +1,10 @@
 import os
+from zoneinfo import ZoneInfo
 
 from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import Configuration
+
+BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
 
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")

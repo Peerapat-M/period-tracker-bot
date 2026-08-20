@@ -17,7 +17,7 @@ from linebot.v3.messaging import (
 )
 
 import db
-from config import LINE_OA_ID, configuration
+from config import BANGKOK_TZ, LINE_OA_ID, configuration
 
 
 def build_pair_deep_link(user_id):
@@ -51,8 +51,8 @@ def get_calendar_quick_reply():
                     label="📅 เลือกวันแรก",
                     data="action=select_date",
                     mode="date",
-                    initial=datetime.now().strftime("%Y-%m-%d"),
-                    max=datetime.now().strftime("%Y-%m-%d"),
+                    initial=datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
+                    max=datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
                 )
             ),
             QuickReplyItem(action=MessageAction(label="พยากรณ์ล่าสุด", text="พยากรณ์ล่าสุด")),
