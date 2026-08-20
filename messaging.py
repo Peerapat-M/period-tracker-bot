@@ -56,9 +56,8 @@ def get_calendar_quick_reply():
                 )
             ),
             QuickReplyItem(action=MessageAction(label="พยากรณ์ล่าสุด", text="พยากรณ์ล่าสุด")),
-            QuickReplyItem(action=MessageAction(label="ดูประวัติ", text="ดูประวัติ")),
             QuickReplyItem(action=MessageAction(label="แชร์ให้แฟน", text="แชร์ให้แฟน")),
-            QuickReplyItem(action=MessageAction(label="แจ้งเตือน", text="แจ้งเตือน")),
+            QuickReplyItem(action=MessageAction(label="ตั้งค่าแจ้งเตือน", text="ตั้งค่าแจ้งเตือน")),
         ]
     )
 
@@ -69,6 +68,14 @@ def get_settings_quick_reply():
             QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 1 วัน", data="action=set_remind&days=1")),
             QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 3 วัน", data="action=set_remind&days=3")),
             QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 5 วัน", data="action=set_remind&days=5")),
+            QuickReplyItem(
+                action=DatetimePickerAction(
+                    label="⏰ ตั้งเวลาแจ้งเตือน",
+                    data="action=set_remind_hour",
+                    mode="time",
+                    initial="08:00",
+                )
+            ),
         ]
     )
 
@@ -78,6 +85,15 @@ def get_confirm_reset_quick_reply():
         items=[
             QuickReplyItem(action=PostbackAction(label="⚠️ ยืนยันล้างข้อมูล", data="action=confirm_reset")),
             QuickReplyItem(action=PostbackAction(label="❌ ยกเลิก", data="action=cancel_reset")),
+        ]
+    )
+
+
+def get_confirm_delete_quick_reply():
+    return QuickReply(
+        items=[
+            QuickReplyItem(action=PostbackAction(label="⚠️ ยืนยันลบ", data="action=confirm_delete_last")),
+            QuickReplyItem(action=PostbackAction(label="❌ ยกเลิก", data="action=cancel_delete_last")),
         ]
     )
 
@@ -225,3 +241,29 @@ def send_late_period_alert(user_id, next_period_str):
         send_push(user_id, [msg])
     except Exception as e:
         print(f"❌ ส่งแจ้งเตือนรอบเดือนเลทล้มเหลว: {e}")
+
+
+def send_fertile_window_alert(user_id, fertile_start_str, fertile_end_str):
+    msg = TextMessage(
+        text=f"🥚 ช่วงมีโอกาสตั้งครรภ์สูง\n\n"
+             f"คาดว่าวันที่ {fertile_start_str} - {fertile_end_str} เป็นช่วงที่มีโอกาสตั้งครรภ์สูงนะคะ\n"
+             f"หากกำลังวางแผนมีบุตรหรือคุมกำเนิด ควรวางแผนล่วงหน้าในช่วงนี้ค่ะ 🌸",
+        quick_reply=get_calendar_quick_reply(),
+    )
+    try:
+        send_push(user_id, [msg])
+    except Exception as e:
+        print(f"❌ ส่งแจ้งเตือนช่วงไข่ตกล้มเหลว: {e}")
+
+
+def send_test_date_alert(user_id, test_date_str):
+    msg = TextMessage(
+        text=f"🧪 วันแนะนำเริ่มตรวจครรภ์\n\n"
+             f"วันนี้ ({test_date_str}) เป็นวันที่แนะนำให้เริ่มตรวจครรภ์ได้แล้วนะคะ\n"
+             f"หากผลตรวจไม่ชัดเจน ลองตรวจซ้ำอีกครั้งในอีกไม่กี่วันได้ค่ะ 🌸",
+        quick_reply=get_calendar_quick_reply(),
+    )
+    try:
+        send_push(user_id, [msg])
+    except Exception as e:
+        print(f"❌ ส่งแจ้งเตือนวันตรวจครรภ์ล้มเหลว: {e}")

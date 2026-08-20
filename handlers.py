@@ -65,7 +65,9 @@ def process_and_reply(user_id, start_date, custom_cycle=None):
         user_id, start_date, custom_cycle
     )
 
-    remind_days = scheduler_module.schedule_user_reminders(user_id, next_period)
+    remind_days = scheduler_module.schedule_user_reminders(
+        user_id, next_period, fertile_start, fertile_end, test_date
+    )
 
     return messaging.create_prediction_flex(
         start_date, next_period, ovulation, fertile_start, fertile_end, test_date, avg_cycle, remind_days
@@ -149,30 +151,25 @@ def handle_message(event):
 
     elif user_text_lower in ["แจ้งเตือน", "ตั้งค่าแจ้งเตือน", "ตั้งค่า", "settings"]:
         current_days = db.get_user_remind_days(user_id)
+        current_hour = db.get_user_remind_hour(user_id)
         reply_msg = messaging.TextMessage(
             text=f"⚙️ ตั้งค่าการแจ้งเตือน\n\n"
-                 f"ปัจจุบันน้องบอทจะเตือนล่วงหน้า {current_days} วัน (เวลา 09:00 น.)\n"
-                 f"ต้องการเปลี่ยนเป็นเตือนล่วงหน้ากี่วัน เลือกด้านล่างได้เลยนะคะ:",
+                 f"ปัจจุบันน้องบอทจะเตือนล่วงหน้า {current_days} วัน (เวลา {current_hour:02d}:00 น.)\n"
+                 f"ต้องการเปลี่ยนเป็นเตือนล่วงหน้ากี่วัน หรือปรับเวลาแจ้งเตือน เลือกด้านล่างได้เลยนะคะ:",
             quick_reply=messaging.get_settings_quick_reply(),
         )
 
     elif user_text_lower in ["ลบรายการล่าสุด", "ลบข้อมูล", "ลบ", "delete"]:
-        if db.delete_last_log(user_id):
-            remaining_logs = db.get_user_logs(user_id, limit=1)
-            if remaining_logs:
-                latest_date = datetime.strptime(remaining_logs[0]["start_date"], "%Y-%m-%d")
-                avg_cycle = db.calculate_avg_cycle(user_id)
-                next_period = latest_date + timedelta(days=avg_cycle)
-                scheduler_module.schedule_user_reminders(user_id, next_period)
-            else:
-                scheduler_module.remove_user_reminders(user_id)
-
-            reply_msg = messaging.TextMessage(
-                text="ลบรายการล่าสุดเรียบร้อยแล้วค่ะ 🗑️\nกดปุ่ม 'ดูประวัติ' เพื่อดูรายการที่เหลือได้เลยนะคะ",
-                quick_reply=messaging.get_calendar_quick_reply(),
-            )
-        else:
+        latest_logs = db.get_user_logs(user_id, limit=1)
+        if not latest_logs:
             reply_msg = messaging.TextMessage(text="ไม่พบข้อมูลให้ลบค่ะ 😊", quick_reply=messaging.get_calendar_quick_reply())
+        else:
+            latest_date_str = datetime.strptime(latest_logs[0]["start_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+            reply_msg = messaging.TextMessage(
+                text=f"⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบรายการล่าสุด (วันที่ {latest_date_str})?\n"
+                     "การดำเนินการนี้ไม่สามารถย้อนกลับได้ค่ะ",
+                quick_reply=messaging.get_confirm_delete_quick_reply(),
+            )
 
     elif user_text_lower in ["รีเซ็ตประวัติ", "รีเซ็ต", "reset", "ล้างข้อมูล"]:
         reply_msg = messaging.TextMessage(
@@ -248,6 +245,29 @@ def handle_postback(event):
         flex_message = process_and_reply(user_id, start_date)
         messaging.send_reply(event.reply_token, [flex_message])
 
+    elif postback_data == "action=set_remind_hour":
+        selected_time_str = event.postback.params.get("time")
+        if not selected_time_str:
+            return
+        hour = int(selected_time_str.split(":")[0])
+        db.set_user_remind_hour(user_id, hour)
+
+        logs = db.get_user_logs(user_id, limit=1)
+        if logs:
+            latest_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
+            _, next_period, _, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
+                user_id, latest_date
+            )
+            scheduler_module.schedule_user_reminders(
+                user_id, next_period, fertile_start, fertile_end, test_date
+            )
+
+        reply_msg = messaging.TextMessage(
+            text=f"✅ ตั้งค่าเรียบร้อย! น้องบอทจะแจ้งเตือนเวลา {hour:02d}:00 น. นะคะ 🌸",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+        messaging.send_reply(event.reply_token, [reply_msg])
+
     elif postback_data.startswith("action=set_remind"):
         days = int(postback_data.split("days=")[1])
         db.set_user_remind_days(user_id, days)
@@ -255,12 +275,44 @@ def handle_postback(event):
         logs = db.get_user_logs(user_id, limit=1)
         if logs:
             latest_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
-            avg_cycle = db.calculate_avg_cycle(user_id)
-            next_period = latest_date + timedelta(days=avg_cycle)
-            scheduler_module.schedule_user_reminders(user_id, next_period)
+            _, next_period, _, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
+                user_id, latest_date
+            )
+            scheduler_module.schedule_user_reminders(
+                user_id, next_period, fertile_start, fertile_end, test_date
+            )
 
         reply_msg = messaging.TextMessage(
             text=f"✅ ตั้งค่าเรียบร้อย! น้องบอทจะแจ้งเตือนล่วงหน้า {days} วัน ก่อนรอบเดือนถัดไปนะคะ 🌸",
+            quick_reply=messaging.get_calendar_quick_reply(),
+        )
+        messaging.send_reply(event.reply_token, [reply_msg])
+
+    elif postback_data == "action=confirm_delete_last":
+        if db.delete_last_log(user_id):
+            remaining_logs = db.get_user_logs(user_id, limit=1)
+            if remaining_logs:
+                latest_date = datetime.strptime(remaining_logs[0]["start_date"], "%Y-%m-%d")
+                _, next_period, _, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
+                    user_id, latest_date
+                )
+                scheduler_module.schedule_user_reminders(
+                    user_id, next_period, fertile_start, fertile_end, test_date
+                )
+            else:
+                scheduler_module.remove_user_reminders(user_id)
+
+            reply_msg = messaging.TextMessage(
+                text="ลบรายการล่าสุดเรียบร้อยแล้วค่ะ 🗑️\nกดปุ่ม 'ดูประวัติ' เพื่อดูรายการที่เหลือได้เลยนะคะ",
+                quick_reply=messaging.get_calendar_quick_reply(),
+            )
+        else:
+            reply_msg = messaging.TextMessage(text="ไม่พบข้อมูลให้ลบค่ะ 😊", quick_reply=messaging.get_calendar_quick_reply())
+        messaging.send_reply(event.reply_token, [reply_msg])
+
+    elif postback_data == "action=cancel_delete_last":
+        reply_msg = messaging.TextMessage(
+            text="❌ ยกเลิกการลบข้อมูลเรียบร้อยแล้ว ข้อมูลของคุณยังปลอดภัยอยู่ค่ะ 🌸",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
         messaging.send_reply(event.reply_token, [reply_msg])

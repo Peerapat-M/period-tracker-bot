@@ -28,10 +28,12 @@ def init_db():
                 """
                 CREATE TABLE IF NOT EXISTS user_settings (
                     user_id TEXT PRIMARY KEY,
-                    remind_days_before INTEGER DEFAULT 3
+                    remind_days_before INTEGER DEFAULT 3,
+                    remind_hour INTEGER DEFAULT 8
                 )
                 """
             )
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS remind_hour INTEGER DEFAULT 8")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS partners (
@@ -136,6 +138,33 @@ def set_user_remind_days(user_id, days):
                 ON CONFLICT(user_id) DO UPDATE SET remind_days_before = EXCLUDED.remind_days_before
                 """,
                 (user_id, days),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_remind_hour(user_id):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT remind_hour FROM user_settings WHERE user_id = %s", (user_id,))
+            row = cur.fetchone()
+        return row["remind_hour"] if row and row["remind_hour"] is not None else 8
+    finally:
+        conn.close()
+
+
+def set_user_remind_hour(user_id, hour):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_settings (user_id, remind_hour) VALUES (%s, %s)
+                ON CONFLICT(user_id) DO UPDATE SET remind_hour = EXCLUDED.remind_hour
+                """,
+                (user_id, hour),
             )
             conn.commit()
     finally:
