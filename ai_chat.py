@@ -22,7 +22,7 @@ SYSTEM_PROMPT = (
     "ให้แนะนำให้กดปุ่ม 'ดูประวัติ' เพื่อดูวันที่คำนวณจากระบบแทน เพราะแม่นยำกว่า"
 )
 
-REQUEST_TIMEOUT_MS = 8000
+REQUEST_TIMEOUT_MS = 12000
 DAILY_LIMIT_PER_USER = 10
 GLOBAL_LIMIT_PER_MINUTE = 5
 
