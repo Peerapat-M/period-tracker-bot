@@ -1,17 +1,10 @@
-import logging
+import os
 import time
-from collections import deque
 
 from google.genai import Client, errors, types
 
-import db
-from config import GEMINI_API_KEY
-
-logger = logging.getLogger(__name__)
-
-MODEL = "gemini-3.6-flash"
-FALLBACK_MODEL = "gemini-3.1-flash-lite"
-
+# Copied from ai_chat.py's SYSTEM_PROMPT — kept standalone here so this script
+# only needs GEMINI_API_KEY, not the full app config (LINE/DB credentials).
 SYSTEM_PROMPT = (
     "คุณคือน้องบอท ผู้ช่วยตอบคำถามเกี่ยวกับประจำเดือน สุขภาพผู้หญิง และการตั้งครรภ์ในไลน์บอทติดตามรอบเดือน "
     "รวมถึงหัวข้อที่เกี่ยวข้อง เช่น การคุมกำเนิด/วางแผนครอบครัว อาหารที่ควรกินหรือควรหลีกเลี่ยง "
@@ -28,71 +21,43 @@ SYSTEM_PROMPT = (
     "ให้แนะนำให้กดปุ่ม 'พยากรณ์ล่าสุด' ด้านล่าง หรือพิมพ์คำว่า 'พยากรณ์ล่าสุด' เพื่อดูวันที่คำนวณจากระบบแทน เพราะแม่นยำกว่า"
 )
 
-REQUEST_TIMEOUT_MS = 12000
-DAILY_LIMIT_PER_USER = 10
-GLOBAL_LIMIT_PER_MINUTE = 10
+API_KEY = os.getenv("GEMINI_API_KEY")
+MODELS = ["gemini-3.6-flash", "gemini-3.1-flash-lite"]
 
-QUOTA_REACHED_MESSAGE = "วันนี้ถามน้องบอทครบโควตาแล้วนะคะ ลองใหม่พรุ่งนี้ได้เลยค่ะ 🌸"
-BUSY_MESSAGE = "ขออภัยค่ะ ตอนนี้มีคนถามน้องบอทพร้อมกันเยอะ รบกวนลองพิมพ์คำถามใหม่อีกครั้งในอีกสักครู่นะคะ 🙏"
-
-_client = (
-    Client(api_key=GEMINI_API_KEY, http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS))
-    if GEMINI_API_KEY
-    else None
-)
-
-_recent_call_times = {MODEL: deque(), FALLBACK_MODEL: deque()}
+TEST_PROMPTS = [
+    "ปวดท้องประจำเดือนควรกินอะไรดี",
+    "รอบเดือนหน้าจะมาวันไหน",
+    "แนะนำร้านอาหารในกรุงเทพหน่อย",
+    "ปวดท้องประจำเดือนมากๆ ควรกินยาอะไร",
+]
 
 
-def _global_limit_reached(model):
-    now = time.monotonic()
-    bucket = _recent_call_times[model]
-    while bucket and now - bucket[0] > 60:
-        bucket.popleft()
-    return len(bucket) >= GLOBAL_LIMIT_PER_MINUTE
+def main():
+    if not API_KEY:
+        raise SystemExit("Set the GEMINI_API_KEY environment variable before running this script.")
+
+    client = Client(api_key=API_KEY)
+
+    for prompt in TEST_PROMPTS:
+        print("=" * 70)
+        print(f"คำถาม: {prompt}")
+        print("=" * 70)
+        for model in MODELS:
+            start = time.monotonic()
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+                )
+                elapsed = time.monotonic() - start
+                print(f"\n[{model}] ({elapsed:.2f}s)")
+                print(response.text)
+            except errors.APIError as e:
+                elapsed = time.monotonic() - start
+                print(f"\n[{model}] ({elapsed:.2f}s) ERROR code={e.code}: {e.message}")
+        print()
 
 
-def _try_model(model, user_text, system_instruction):
-    if _global_limit_reached(model):
-        return None
-
-    _recent_call_times[model].append(time.monotonic())
-
-    try:
-        response = _client.models.generate_content(
-            model=model,
-            contents=user_text,
-            config=types.GenerateContentConfig(system_instruction=system_instruction),
-        )
-        return response.text
-    except errors.APIError as e:
-        logger.warning("Gemini API error on %s (code=%s): %s", model, e.code, e.message)
-        return None
-    except Exception:
-        logger.exception("Unexpected error calling Gemini API on %s", model)
-        return None
-
-
-def get_ai_reply(user_id, user_text):
-    if _client is None:
-        return None
-
-    if db.count_ai_requests_today(user_id) >= DAILY_LIMIT_PER_USER:
-        return QUOTA_REACHED_MESSAGE
-
-    logs = db.get_user_logs(user_id, limit=1)
-    if logs:
-        avg_cycle = db.calculate_avg_cycle(user_id)
-        user_context = f"รอบเดือนล่าสุดของผู้ใช้เริ่มวันที่ {logs[0]['start_date']} รอบเฉลี่ย {avg_cycle} วัน"
-    else:
-        user_context = "ผู้ใช้ยังไม่มีประวัติการบันทึกรอบเดือน"
-
-    system_instruction = f"{SYSTEM_PROMPT}\n\nข้อมูลผู้ใช้: {user_context}"
-
-    for model in (MODEL, FALLBACK_MODEL):
-        text = _try_model(model, user_text, system_instruction)
-        if text:
-            db.log_ai_request(user_id)
-            return text
-
-    return BUSY_MESSAGE
+if __name__ == "__main__":
+    main()
