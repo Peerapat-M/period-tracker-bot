@@ -128,7 +128,11 @@ def create_prediction_flex(latest_date, next_period, ovulation, fertile_start, f
             ],
         },
     }
-    return FlexMessage(alt_text="พยากรณ์รอบเดือน", contents=FlexContainer.from_dict(bubble_json))
+    return FlexMessage(
+        alt_text="พยากรณ์รอบเดือน",
+        contents=FlexContainer.from_dict(bubble_json),
+        quick_reply=get_calendar_quick_reply(),
+    )
 
 
 def create_history_flex(user_id):
@@ -168,7 +172,11 @@ def create_history_flex(user_id):
             ],
         },
     }
-    return FlexMessage(alt_text="ประวัติรอบเดือน", contents=FlexContainer.from_dict(bubble_json))
+    return FlexMessage(
+        alt_text="ประวัติรอบเดือน",
+        contents=FlexContainer.from_dict(bubble_json),
+        quick_reply=get_calendar_quick_reply(),
+    )
 
 
 # ----------------------------------------------------
