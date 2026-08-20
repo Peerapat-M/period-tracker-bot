@@ -25,9 +25,10 @@ SYSTEM_PROMPT = (
 
 REQUEST_TIMEOUT_MS = 12000
 DAILY_LIMIT_PER_USER = 10
-GLOBAL_LIMIT_PER_MINUTE = 5
+GLOBAL_LIMIT_PER_MINUTE = 10
 
 QUOTA_REACHED_MESSAGE = "วันนี้ถามน้องบอทครบโควตาแล้วนะคะ ลองใหม่พรุ่งนี้ได้เลยค่ะ 🌸"
+BUSY_MESSAGE = "ขออภัยค่ะ ตอนนี้มีคนถามน้องบอทพร้อมกันเยอะ รบกวนลองพิมพ์คำถามใหม่อีกครั้งในอีกสักครู่นะคะ 🙏"
 
 _client = (
     Client(api_key=GEMINI_API_KEY, http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS))
@@ -53,7 +54,7 @@ def get_ai_reply(user_id, user_text):
         return QUOTA_REACHED_MESSAGE
 
     if _global_limit_reached():
-        return None
+        return BUSY_MESSAGE
 
     logs = db.get_user_logs(user_id, limit=1)
     if logs:
@@ -76,7 +77,7 @@ def get_ai_reply(user_id, user_text):
         return response.text
     except errors.APIError as e:
         logger.warning("Gemini API error (code=%s): %s", e.code, e.message)
-        return None
+        return BUSY_MESSAGE
     except Exception:
         logger.exception("Unexpected error calling Gemini API")
-        return None
+        return BUSY_MESSAGE
