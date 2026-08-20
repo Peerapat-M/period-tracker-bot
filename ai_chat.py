@@ -9,8 +9,13 @@ from config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-3.6-flash"
-FALLBACK_MODEL = "gemini-3.1-flash-lite"
+FAST_MODEL = "gemini-3.1-flash-lite"
+CAREFUL_MODEL = "gemini-3.6-flash"
+
+# Topics where a wrong or careless answer matters most (found by testing:
+# the fast model named specific drugs before the disclaimer) — route these
+# to the slower but more reliable model instead of the fast default.
+SENSITIVE_KEYWORDS = ["ยา", "รุนแรง", "หนัก", "ผิดปกติ", "อันตราย", "เสี่ยง"]
 
 SYSTEM_PROMPT = (
     "คุณคือน้องบอท ผู้ช่วยตอบคำถามเกี่ยวกับประจำเดือน สุขภาพผู้หญิง และการตั้งครรภ์ในไลน์บอทติดตามรอบเดือน "
@@ -41,7 +46,11 @@ _client = (
     else None
 )
 
-_recent_call_times = {MODEL: deque(), FALLBACK_MODEL: deque()}
+_recent_call_times = {FAST_MODEL: deque(), CAREFUL_MODEL: deque()}
+
+
+def _is_sensitive_topic(user_text):
+    return any(keyword in user_text for keyword in SENSITIVE_KEYWORDS)
 
 
 def _global_limit_reached(model):
@@ -89,7 +98,12 @@ def get_ai_reply(user_id, user_text):
 
     system_instruction = f"{SYSTEM_PROMPT}\n\nข้อมูลผู้ใช้: {user_context}"
 
-    for model in (MODEL, FALLBACK_MODEL):
+    if _is_sensitive_topic(user_text):
+        model_order = (CAREFUL_MODEL, FAST_MODEL)
+    else:
+        model_order = (FAST_MODEL, CAREFUL_MODEL)
+
+    for model in model_order:
         text = _try_model(model, user_text, system_instruction)
         if text:
             db.log_ai_request(user_id)
