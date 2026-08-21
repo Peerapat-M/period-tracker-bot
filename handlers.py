@@ -256,10 +256,10 @@ def handle_message(event):
             )
 
     elif user_text_lower in ["แจ้งเตือน", "ตั้งค่าแจ้งเตือน", "ตั้งค่า", "settings"]:
-        current_days, current_hour = db.get_user_reminder_settings(user_id)
+        current_days, current_hour, current_minute = db.get_user_reminder_settings(user_id)
         reply_msg = messaging.TextMessage(
             text=f"⚙️ ตั้งค่าการแจ้งเตือน\n\n"
-                 f"ปัจจุบันน้องบอทจะเตือนล่วงหน้า {current_days} วัน (เวลา {current_hour:02d}:00 น.)\n"
+                 f"ปัจจุบันน้องบอทจะเตือนล่วงหน้า {current_days} วัน (เวลา {current_hour:02d}:{current_minute:02d} น.)\n"
                  f"ต้องการเปลี่ยนเป็นเตือนล่วงหน้ากี่วัน หรือปรับเวลาแจ้งเตือน เลือกด้านล่างได้เลยนะคะ:",
             quick_reply=messaging.get_settings_quick_reply(),
         )
@@ -356,12 +356,14 @@ def handle_postback(event):
         selected_time_str = event.postback.params.get("time")
         if not selected_time_str:
             return
-        hour = int(selected_time_str.split(":")[0])
+        hour_str, minute_str = selected_time_str.split(":")
+        hour, minute = int(hour_str), int(minute_str)
         db.set_user_remind_hour(user_id, hour)
+        db.set_user_remind_minute(user_id, minute)
         _reschedule_reminders(user_id)
 
         reply_msg = messaging.TextMessage(
-            text=f"✅ ตั้งค่าเรียบร้อย! น้องบอทจะแจ้งเตือนเวลา {hour:02d}:00 น. นะคะ 🌸",
+            text=f"✅ ตั้งค่าเรียบร้อย! น้องบอทจะแจ้งเตือนเวลา {hour:02d}:{minute:02d} น. นะคะ 🌸",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
         messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)

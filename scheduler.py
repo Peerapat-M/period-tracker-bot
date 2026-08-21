@@ -55,11 +55,11 @@ def _resolve_run_date(naive_datetime):
 
 
 def schedule_user_reminders(user_id, next_period, fertile_start, fertile_end, test_date):
-    remind_days, remind_hour = db.get_user_reminder_settings(user_id)
+    remind_days, remind_hour, remind_minute = db.get_user_reminder_settings(user_id)
     next_period_str = next_period.strftime("%d/%m/%Y")
 
     def _at(date_obj):
-        return datetime.combine(date_obj, datetime.min.time()).replace(hour=remind_hour, minute=0)
+        return datetime.combine(date_obj, datetime.min.time()).replace(hour=remind_hour, minute=remind_minute)
 
     jobs = (
         (

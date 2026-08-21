@@ -93,6 +93,7 @@ def _init_user_settings(cur):
         """
     )
     cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS remind_hour INTEGER DEFAULT 8")
+    cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS remind_minute INTEGER DEFAULT 0")
     cur.execute("ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY")
 
 
@@ -253,19 +254,28 @@ def set_user_remind_hour(user_id, hour):
     _set_user_setting(user_id, "remind_hour", hour)
 
 
+def get_user_remind_minute(user_id):
+    return _get_user_setting(user_id, "remind_minute", 0)
+
+
+def set_user_remind_minute(user_id, minute):
+    _set_user_setting(user_id, "remind_minute", minute)
+
+
 def get_user_reminder_settings(user_id):
-    """Fetch remind_days_before and remind_hour in one round trip, for
-    callers (scheduler.schedule_user_reminders, the settings menu) that
-    always need both together."""
+    """Fetch remind_days_before, remind_hour, and remind_minute in one
+    round trip, for callers (scheduler.schedule_user_reminders, the
+    settings menu) that always need all three together."""
     with _cursor() as cur:
         cur.execute(
-            "SELECT remind_days_before, remind_hour FROM user_settings WHERE user_id = %s",
+            "SELECT remind_days_before, remind_hour, remind_minute FROM user_settings WHERE user_id = %s",
             (user_id,),
         )
         row = cur.fetchone()
     remind_days = row["remind_days_before"] if row and row["remind_days_before"] is not None else 3
     remind_hour = row["remind_hour"] if row and row["remind_hour"] is not None else 8
-    return remind_days, remind_hour
+    remind_minute = row["remind_minute"] if row and row["remind_minute"] is not None else 0
+    return remind_days, remind_hour, remind_minute
 
 
 # ----------------------------------------------------
