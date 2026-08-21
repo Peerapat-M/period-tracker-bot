@@ -28,6 +28,10 @@ def build_pair_deep_link(user_id):
     return f"https://line.me/R/oaMessage/{LINE_OA_ID}/?{prefilled_text}"
 
 
+def format_thai_date(date_str):
+    return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+
+
 # ----------------------------------------------------
 # LINE API send helpers
 # ----------------------------------------------------
@@ -71,6 +75,7 @@ def _safe_push(to, messages, failure_label):
 # Quick Replies
 # ----------------------------------------------------
 def get_calendar_quick_reply():
+    now = datetime.now(BANGKOK_TZ)
     return QuickReply(
         items=[
             QuickReplyItem(
@@ -78,9 +83,9 @@ def get_calendar_quick_reply():
                     label="📅 เลือกวันแรก",
                     data="action=select_date",
                     mode="date",
-                    initial=datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
-                    min=(datetime.now(BANGKOK_TZ) - timedelta(days=MAX_PERIOD_LOG_BACKDATE_DAYS)).strftime("%Y-%m-%d"),
-                    max=datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
+                    initial=now.strftime("%Y-%m-%d"),
+                    min=(now - timedelta(days=MAX_PERIOD_LOG_BACKDATE_DAYS)).strftime("%Y-%m-%d"),
+                    max=now.strftime("%Y-%m-%d"),
                 )
             ),
             QuickReplyItem(action=MessageAction(label="พยากรณ์ล่าสุด", text="พยากรณ์ล่าสุด")),
@@ -199,12 +204,11 @@ def create_history_flex(user_id):
     if not logs:
         return None
 
-    avg_cycle = db.calculate_avg_cycle(user_id)
+    avg_cycle = db.calculate_avg_cycle(user_id, logs=logs)
 
     history_contents = []
     for log in logs:
-        dt = datetime.strptime(log["start_date"], "%Y-%m-%d")
-        display_date = dt.strftime("%d/%m/%Y")
+        display_date = format_thai_date(log["start_date"])
         history_contents.append(
             _info_row(
                 "🩸", "ประจำเดือนมาวันแรก", display_date, value_color="#C75B7A",

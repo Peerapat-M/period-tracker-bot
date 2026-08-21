@@ -58,7 +58,13 @@ def _dedupe_webhook_event(handler_func):
 
         try:
             handler_func(event)
-        except Exception:
+        except BaseException:
+            # Catches BaseException, not just Exception: a bare `except
+            # Exception` would leave event_id stuck in
+            # _IN_PROGRESS_EVENT_IDS forever if the handler is interrupted
+            # by something else (e.g. SystemExit/GeneratorExit from a
+            # worker timeout), silently dropping every future retry of that
+            # exact event.
             with _LOCK:
                 _IN_PROGRESS_EVENT_IDS.discard(event_id)
             # Recorded as failed (not processed), so a retry of a genuinely
@@ -92,11 +98,11 @@ def parse_date_input(text):
         return None, None
 
 
-def calculate_cycle_prediction(user_id, start_date, custom_cycle=None):
+def calculate_cycle_prediction(user_id, start_date, custom_cycle=None, logs=None):
     if custom_cycle and 20 <= custom_cycle <= 45:
         avg_cycle = custom_cycle
     else:
-        avg_cycle = db.calculate_avg_cycle(user_id)
+        avg_cycle = db.calculate_avg_cycle(user_id, logs=logs)
 
     next_period = start_date + timedelta(days=avg_cycle)
     ovulation = next_period - timedelta(days=14)
@@ -136,19 +142,29 @@ def process_and_reply(user_id, start_date, custom_cycle=None):
     )
 
 
+def _latest_prediction(user_id):
+    """Fetch the user's logs once and compute the prediction from the
+    latest one. Returns None if there's no history to predict from,
+    otherwise (start_date, calculate_cycle_prediction(...)).
+    """
+    logs = db.get_user_logs(user_id, limit=db.MAX_PERIOD_LOGS_PER_USER)
+    if not logs:
+        return None
+
+    start_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
+    return start_date, calculate_cycle_prediction(user_id, start_date, logs=logs)
+
+
 def _reschedule_reminders(user_id):
     """Recompute predictions from the user's latest log and reschedule reminders.
 
     Returns True if a log existed to reschedule from, False otherwise.
     """
-    logs = db.get_user_logs(user_id, limit=1)
-    if not logs:
+    result = _latest_prediction(user_id)
+    if not result:
         return False
 
-    latest_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
-    _, next_period, _, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
-        user_id, latest_date
-    )
+    _, (_, next_period, _, fertile_start, fertile_end, test_date) = result
     scheduler_module.schedule_user_reminders(
         user_id, next_period, fertile_start, fertile_end, test_date
     )
@@ -165,17 +181,14 @@ def _parse_postback_params(postback_data):
 
 
 def show_latest_prediction(user_id):
-    logs = db.get_user_logs(user_id, limit=1)
-    if not logs:
+    result = _latest_prediction(user_id)
+    if not result:
         return messaging.TextMessage(
             text="ยังไม่พบประวัติการบันทึกค่ะ เลือกกด 'บันทึกรอบเดือน' เพื่อเริ่มบันทึกได้เลยนะคะ 😊",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
 
-    start_date = datetime.strptime(logs[0]["start_date"], "%Y-%m-%d")
-    avg_cycle, next_period, ovulation, fertile_start, fertile_end, test_date = calculate_cycle_prediction(
-        user_id, start_date
-    )
+    start_date, (avg_cycle, next_period, ovulation, fertile_start, fertile_end, test_date) = result
     remind_days = db.get_user_remind_days(user_id)
 
     return messaging.create_prediction_flex(
@@ -243,8 +256,7 @@ def handle_message(event):
             )
 
     elif user_text_lower in ["แจ้งเตือน", "ตั้งค่าแจ้งเตือน", "ตั้งค่า", "settings"]:
-        current_days = db.get_user_remind_days(user_id)
-        current_hour = db.get_user_remind_hour(user_id)
+        current_days, current_hour = db.get_user_reminder_settings(user_id)
         reply_msg = messaging.TextMessage(
             text=f"⚙️ ตั้งค่าการแจ้งเตือน\n\n"
                  f"ปัจจุบันน้องบอทจะเตือนล่วงหน้า {current_days} วัน (เวลา {current_hour:02d}:00 น.)\n"
@@ -257,7 +269,7 @@ def handle_message(event):
         if not latest_logs:
             reply_msg = messaging.TextMessage(text="ไม่พบข้อมูลให้ลบค่ะ 😊", quick_reply=messaging.get_calendar_quick_reply())
         else:
-            latest_date_str = datetime.strptime(latest_logs[0]["start_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+            latest_date_str = messaging.format_thai_date(latest_logs[0]["start_date"])
             reply_msg = messaging.TextMessage(
                 text=f"⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบรายการล่าสุด (วันที่ {latest_date_str})?\n"
                      "การดำเนินการนี้ไม่สามารถย้อนกลับได้ค่ะ",
@@ -354,8 +366,8 @@ def handle_postback(event):
         )
         messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
-    elif postback_data.startswith("action=set_remind"):
-        days = int(postback_data.split("days=")[1])
+    elif postback_data.startswith("action=set_remind&"):
+        days = int(_parse_postback_params(postback_data)["days"])
         db.set_user_remind_days(user_id, days)
         _reschedule_reminders(user_id)
 
@@ -385,7 +397,7 @@ def handle_postback(event):
 
     elif postback_data.startswith("action=select_delete"):
         params = _parse_postback_params(postback_data)
-        display_date = datetime.strptime(params["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+        display_date = messaging.format_thai_date(params["date"])
         reply_msg = messaging.TextMessage(
             text=f"⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบรายการวันที่ {display_date}?\n"
                  "การดำเนินการนี้ไม่สามารถย้อนกลับได้ค่ะ",

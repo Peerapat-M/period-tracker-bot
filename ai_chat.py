@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 from collections import deque
 
@@ -47,6 +48,7 @@ _client = (
 )
 
 _recent_call_times = {FAST_MODEL: deque(), CAREFUL_MODEL: deque()}
+_rate_limit_lock = threading.Lock()
 
 
 def _is_sensitive_topic(user_text):
@@ -62,10 +64,14 @@ def _global_limit_reached(model):
 
 
 def _try_model(model, user_text, system_instruction):
-    if _global_limit_reached(model):
-        return None
-
-    _recent_call_times[model].append(time.monotonic())
+    # Checking _global_limit_reached and appending this call's timestamp
+    # must happen as one atomic step -- otherwise two threads (gthread
+    # worker, see Procfile) can both pass the check before either records
+    # its call, letting more than GLOBAL_LIMIT_PER_MINUTE calls through.
+    with _rate_limit_lock:
+        if _global_limit_reached(model):
+            return None
+        _recent_call_times[model].append(time.monotonic())
 
     try:
         response = _client.models.generate_content(
@@ -89,9 +95,9 @@ def get_ai_reply(user_id, user_text):
     if db.count_ai_requests_today(user_id) >= DAILY_LIMIT_PER_USER:
         return QUOTA_REACHED_MESSAGE
 
-    logs = db.get_user_logs(user_id, limit=1)
+    logs = db.get_user_logs(user_id, limit=db.MAX_PERIOD_LOGS_PER_USER)
     if logs:
-        avg_cycle = db.calculate_avg_cycle(user_id)
+        avg_cycle = db.calculate_avg_cycle(user_id, logs=logs)
         user_context = f"รอบเดือนล่าสุดของผู้ใช้เริ่มวันที่ {logs[0]['start_date']} รอบเฉลี่ย {avg_cycle} วัน"
     else:
         user_context = "ผู้ใช้ยังไม่มีประวัติการบันทึกรอบเดือน"

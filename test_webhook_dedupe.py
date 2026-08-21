@@ -52,6 +52,32 @@ def test_dedupe_still_retries_after_a_failed_attempt():
     assert calls == ["evt-2", "evt-2"]
 
 
+def test_dedupe_still_retries_after_a_non_exception_base_exception():
+    # A plain `except Exception` would miss this and leave the event stuck
+    # in _IN_PROGRESS_EVENT_IDS forever, silently dropping every future
+    # retry of the same webhook event.
+    _reset()
+    calls = []
+    attempt_count = 0
+
+    @_dedupe_webhook_event
+    def handler(event):
+        nonlocal attempt_count
+        attempt_count += 1
+        calls.append(event.webhook_event_id)
+        if attempt_count == 1:
+            raise SystemExit("worker recycled mid-handler")
+
+    try:
+        handler(_event("evt-base-exc"))
+    except SystemExit:
+        pass
+    handler(_event("evt-base-exc"))
+
+    assert calls == ["evt-base-exc", "evt-base-exc"]
+    assert "evt-base-exc" not in _IN_PROGRESS_EVENT_IDS
+
+
 def test_dedupe_treats_different_event_ids_independently():
     _reset()
     calls = []

@@ -14,7 +14,16 @@ from messaging import (
 )
 
 scheduler = BackgroundScheduler(
-    jobstores={"default": SQLAlchemyJobStore(url=DATABASE_URL)},
+    jobstores={
+        # pool_pre_ping: reminders can be scheduled hours or days out, and
+        # DATABASE_URL now points at Supabase's transaction-mode pooler,
+        # which can drop an idle backend connection between two jobstore
+        # calls that far apart. Without this, the next call reuses the dead
+        # pooled connection and raises OperationalError, which APScheduler
+        # doesn't retry -- pool_pre_ping tests and transparently replaces it
+        # instead.
+        "default": SQLAlchemyJobStore(url=DATABASE_URL, engine_options={"pool_pre_ping": True}),
+    },
     timezone=BANGKOK_TZ,
 )
 scheduler.start()
@@ -46,55 +55,48 @@ def _resolve_run_date(naive_datetime):
 
 
 def schedule_user_reminders(user_id, next_period, fertile_start, fertile_end, test_date):
-    remind_days = db.get_user_remind_days(user_id)
-    remind_hour = db.get_user_remind_hour(user_id)
+    remind_days, remind_hour = db.get_user_reminder_settings(user_id)
     next_period_str = next_period.strftime("%d/%m/%Y")
 
-    reminder_date = next_period - timedelta(days=remind_days)
-    reminder_datetime = datetime.combine(reminder_date, datetime.min.time()).replace(hour=remind_hour, minute=0)
+    def _at(date_obj):
+        return datetime.combine(date_obj, datetime.min.time()).replace(hour=remind_hour, minute=0)
 
-    scheduler.add_job(
-        send_period_reminder,
-        "date",
-        run_date=_resolve_run_date(reminder_datetime),
-        args=[user_id, next_period_str, remind_days],
-        id=_reminder_job_id(user_id),
-        replace_existing=True,
+    jobs = (
+        (
+            _reminder_job_id(user_id),
+            send_period_reminder,
+            _at(next_period - timedelta(days=remind_days)),
+            [user_id, next_period_str, remind_days],
+        ),
+        (
+            _late_job_id(user_id),
+            send_late_period_alert,
+            _at(next_period + timedelta(days=2)),
+            [user_id, next_period_str],
+        ),
+        (
+            _fertile_job_id(user_id),
+            send_fertile_window_alert,
+            _at(fertile_start),
+            [user_id, fertile_start.strftime("%d/%m/%Y"), fertile_end.strftime("%d/%m/%Y")],
+        ),
+        (
+            _test_date_job_id(user_id),
+            send_test_date_alert,
+            _at(test_date),
+            [user_id, test_date.strftime("%d/%m/%Y")],
+        ),
     )
 
-    late_date = next_period + timedelta(days=2)
-    late_datetime = datetime.combine(late_date, datetime.min.time()).replace(hour=remind_hour, minute=0)
-
-    scheduler.add_job(
-        send_late_period_alert,
-        "date",
-        run_date=_resolve_run_date(late_datetime),
-        args=[user_id, next_period_str],
-        id=_late_job_id(user_id),
-        replace_existing=True,
-    )
-
-    fertile_datetime = datetime.combine(fertile_start, datetime.min.time()).replace(hour=remind_hour, minute=0)
-
-    scheduler.add_job(
-        send_fertile_window_alert,
-        "date",
-        run_date=_resolve_run_date(fertile_datetime),
-        args=[user_id, fertile_start.strftime("%d/%m/%Y"), fertile_end.strftime("%d/%m/%Y")],
-        id=_fertile_job_id(user_id),
-        replace_existing=True,
-    )
-
-    test_date_datetime = datetime.combine(test_date, datetime.min.time()).replace(hour=remind_hour, minute=0)
-
-    scheduler.add_job(
-        send_test_date_alert,
-        "date",
-        run_date=_resolve_run_date(test_date_datetime),
-        args=[user_id, test_date.strftime("%d/%m/%Y")],
-        id=_test_date_job_id(user_id),
-        replace_existing=True,
-    )
+    for job_id, func, run_datetime, args in jobs:
+        scheduler.add_job(
+            func,
+            "date",
+            run_date=_resolve_run_date(run_datetime),
+            args=args,
+            id=job_id,
+            replace_existing=True,
+        )
 
     return remind_days
 
