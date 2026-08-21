@@ -39,7 +39,15 @@ def send_push(to, messages):
 def send_reply(reply_token, messages, fallback_to=None):
     """Reply via the reply token, falling back to a push message if it fails
     (e.g. the token expired while the server was cold-starting) so a slow
-    first response still reaches the user instead of going out silently."""
+    first response still reaches the user instead of going out silently.
+
+    Deliberately lets a failure of BOTH the reply and the fallback push
+    propagate (unlike _safe_push's proactive notifications, which are fire-
+    and-forget) -- the caller is a webhook event handler, and an exception
+    here is what keeps _dedupe_webhook_event from marking a totally failed
+    delivery as done and stops it from being silently swallowed with no
+    retry.
+    """
     try:
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(
@@ -47,8 +55,9 @@ def send_reply(reply_token, messages, fallback_to=None):
             )
     except Exception:
         logger.exception("ตอบกลับด้วย reply token ล้มเหลว")
-        if fallback_to:
-            _safe_push(fallback_to, messages, "ตอบกลับ (fallback เป็น push)")
+        if not fallback_to:
+            raise
+        send_push(fallback_to, messages)
 
 
 def _safe_push(to, messages, failure_label):

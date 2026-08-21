@@ -1,5 +1,6 @@
 import functools
 import re
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -22,29 +23,51 @@ MIN_PARTNER_ID_LENGTH = 10
 # most likely right when a slow cold start is exactly what made it late. If
 # the slow original request still completes, the retry lands as a duplicate
 # event and would otherwise get processed (and replied to) all over again.
-# Only one gunicorn worker runs at a time (see Procfile), so requests are
-# naturally serialized: by the time a queued retry is dequeued, the original
-# it duplicates has already finished and recorded its event ID here.
+#
+# The web server runs multiple threads in one process (gthread worker, see
+# Procfile) so a retry can genuinely race the still-running original on a
+# different thread -- _LOCK plus the separate "in progress" claim below is
+# what closes that window; a plain dict check-then-set would let both
+# threads see "not yet done" and process it twice. This is still per-process
+# state (pinned to a single gunicorn worker in the Procfile), so it stops
+# being correct the moment a second worker process exists.
+#
+# The TTL only bounds memory (a few thousand short strings costs nothing);
+# it isn't load-bearing correctness, so it's set well past any plausible
+# LINE redelivery window rather than tuned to a specific documented figure.
 _PROCESSED_EVENT_IDS = {}
-_DEDUPE_TTL_SECONDS = 600
+_IN_PROGRESS_EVENT_IDS = set()
+_DEDUPE_TTL_SECONDS = 86400
+_LOCK = threading.Lock()
 
 
 def _dedupe_webhook_event(handler_func):
     @functools.wraps(handler_func)
     def wrapper(event):
-        now = time.monotonic()
-        for stale_id, seen_at in list(_PROCESSED_EVENT_IDS.items()):
-            if now - seen_at > _DEDUPE_TTL_SECONDS:
-                del _PROCESSED_EVENT_IDS[stale_id]
-
         event_id = event.webhook_event_id
-        if event_id in _PROCESSED_EVENT_IDS:
-            return
+        now = time.monotonic()
 
-        handler_func(event)
-        # Recorded only after a successful run, so a retry of a genuinely
-        # failed attempt still gets processed instead of being skipped.
-        _PROCESSED_EVENT_IDS[event_id] = now
+        with _LOCK:
+            for stale_id, seen_at in list(_PROCESSED_EVENT_IDS.items()):
+                if now - seen_at > _DEDUPE_TTL_SECONDS:
+                    del _PROCESSED_EVENT_IDS[stale_id]
+
+            if event_id in _PROCESSED_EVENT_IDS or event_id in _IN_PROGRESS_EVENT_IDS:
+                return
+            _IN_PROGRESS_EVENT_IDS.add(event_id)
+
+        try:
+            handler_func(event)
+        except Exception:
+            with _LOCK:
+                _IN_PROGRESS_EVENT_IDS.discard(event_id)
+            # Recorded as failed (not processed), so a retry of a genuinely
+            # failed attempt still gets processed instead of being skipped.
+            raise
+        else:
+            with _LOCK:
+                _IN_PROGRESS_EVENT_IDS.discard(event_id)
+                _PROCESSED_EVENT_IDS[event_id] = now
 
     return wrapper
 

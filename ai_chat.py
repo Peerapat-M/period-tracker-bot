@@ -34,7 +34,7 @@ SYSTEM_PROMPT = (
 )
 
 REQUEST_TIMEOUT_MS = 12000
-DAILY_LIMIT_PER_USER = 20
+DAILY_LIMIT_PER_USER = 10
 GLOBAL_LIMIT_PER_MINUTE = 10
 
 QUOTA_REACHED_MESSAGE = "วันนี้ถามน้องบอทครบโควตาแล้วนะคะ ลองใหม่พรุ่งนี้ได้เลยค่ะ 🌸"
