@@ -1,4 +1,5 @@
 import logging
+import sys
 from datetime import datetime, timedelta
 
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED, EVENT_JOB_MISSED
@@ -54,12 +55,19 @@ scheduler.add_listener(_log_job_event, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EV
 
 
 def _heartbeat():
-    logger.info("DEBUG: scheduler heartbeat -- background thread is alive")
+    # print(), not logger.info(): bypasses the logging module's handler/level/
+    # propagation config entirely, to isolate whether missing scheduler logs
+    # are a logging-config issue or the background thread itself not running.
+    print("PRINTDEBUG: scheduler heartbeat -- background thread is alive", flush=True)
+    print("PRINTDEBUG: scheduler heartbeat (stderr)", file=sys.stderr, flush=True)
 
 
+print("PRINTDEBUG: about to call scheduler.start()", flush=True)
 scheduler.start()
+print(f"PRINTDEBUG: scheduler.start() returned, state={scheduler.state}", flush=True)
 logger.info("DEBUG: scheduler.start() returned, state=%s", scheduler.state)
 scheduler.add_job(_heartbeat, "interval", seconds=60, id="_debug_heartbeat", replace_existing=True)
+print("PRINTDEBUG: heartbeat job added", flush=True)
 
 
 def _reminder_job_id(user_id):
