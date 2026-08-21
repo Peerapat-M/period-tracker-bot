@@ -1,5 +1,7 @@
+import logging
 from datetime import datetime, timedelta
 
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED, EVENT_JOB_MISSED
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -12,6 +14,8 @@ from messaging import (
     send_period_reminder,
     send_test_date_alert,
 )
+
+logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(
     jobstores={
@@ -35,7 +39,27 @@ scheduler = BackgroundScheduler(
     },
     timezone=BANGKOK_TZ,
 )
+
+
+def _log_job_event(event):
+    if event.code == EVENT_JOB_MISSED:
+        logger.warning("DEBUG: job %s missed its scheduled run at %s", event.job_id, event.scheduled_run_time)
+    elif event.code == EVENT_JOB_ERROR:
+        logger.error("DEBUG: job %s raised an exception: %s", event.job_id, event.exception)
+    else:
+        logger.info("DEBUG: job %s ran (scheduled for %s)", event.job_id, event.scheduled_run_time)
+
+
+scheduler.add_listener(_log_job_event, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+
+
+def _heartbeat():
+    logger.info("DEBUG: scheduler heartbeat -- background thread is alive")
+
+
 scheduler.start()
+logger.info("DEBUG: scheduler.start() returned, state=%s", scheduler.state)
+scheduler.add_job(_heartbeat, "interval", seconds=60, id="_debug_heartbeat", replace_existing=True)
 
 
 def _reminder_job_id(user_id):
