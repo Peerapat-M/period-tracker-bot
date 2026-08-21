@@ -36,11 +36,19 @@ def send_push(to, messages):
         MessagingApi(api_client).push_message(PushMessageRequest(to=to, messages=messages))
 
 
-def send_reply(reply_token, messages):
-    with ApiClient(configuration) as api_client:
-        MessagingApi(api_client).reply_message(
-            ReplyMessageRequest(reply_token=reply_token, messages=messages)
-        )
+def send_reply(reply_token, messages, fallback_to=None):
+    """Reply via the reply token, falling back to a push message if it fails
+    (e.g. the token expired while the server was cold-starting) so a slow
+    first response still reaches the user instead of going out silently."""
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(reply_token=reply_token, messages=messages)
+            )
+    except Exception:
+        logger.exception("ตอบกลับด้วย reply token ล้มเหลว")
+        if fallback_to:
+            _safe_push(fallback_to, messages, "ตอบกลับ (fallback เป็น push)")
 
 
 def _safe_push(to, messages, failure_label):

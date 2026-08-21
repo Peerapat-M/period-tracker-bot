@@ -28,6 +28,13 @@ def _cursor(commit=False):
         conn.close()
 
 
+def ping():
+    """Trivial round-trip used by the /health endpoint to keep both the app
+    and a free-tier Postgres instance from being treated as idle."""
+    with _cursor() as cur:
+        cur.execute("SELECT 1")
+
+
 def init_db():
     with _cursor(commit=True) as cur:
         cur.execute(

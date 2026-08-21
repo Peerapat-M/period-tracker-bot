@@ -18,6 +18,16 @@ except Exception:
     logger.exception("Database Init Exception")
 
 
+@app.route("/health", methods=["GET", "HEAD"])
+def health():
+    try:
+        db.ping()
+    except Exception:
+        logger.exception("Health Check DB Ping Exception")
+        return "DB unavailable", 503
+    return "OK"
+
+
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")

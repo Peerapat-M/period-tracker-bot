@@ -1,4 +1,6 @@
+import functools
 import re
+import time
 from datetime import datetime, timedelta
 
 from linebot.v3.webhooks import (
@@ -15,6 +17,36 @@ import scheduler as scheduler_module
 from config import BANGKOK_TZ, MAX_PERIOD_LOG_BACKDATE_DAYS, handler
 
 MIN_PARTNER_ID_LENGTH = 10
+
+# LINE retries a webhook delivery if our server doesn't respond in time --
+# most likely right when a slow cold start is exactly what made it late. If
+# the slow original request still completes, the retry lands as a duplicate
+# event and would otherwise get processed (and replied to) all over again.
+# Only one gunicorn worker runs at a time (see Procfile), so requests are
+# naturally serialized: by the time a queued retry is dequeued, the original
+# it duplicates has already finished and recorded its event ID here.
+_PROCESSED_EVENT_IDS = {}
+_DEDUPE_TTL_SECONDS = 600
+
+
+def _dedupe_webhook_event(handler_func):
+    @functools.wraps(handler_func)
+    def wrapper(event):
+        now = time.monotonic()
+        for stale_id, seen_at in list(_PROCESSED_EVENT_IDS.items()):
+            if now - seen_at > _DEDUPE_TTL_SECONDS:
+                del _PROCESSED_EVENT_IDS[stale_id]
+
+        event_id = event.webhook_event_id
+        if event_id in _PROCESSED_EVENT_IDS:
+            return
+
+        handler_func(event)
+        # Recorded only after a successful run, so a retry of a genuinely
+        # failed attempt still gets processed instead of being skipped.
+        _PROCESSED_EVENT_IDS[event_id] = now
+
+    return wrapper
 
 
 def parse_date_input(text):
@@ -129,6 +161,7 @@ def show_latest_prediction(user_id):
 
 
 @handler.add(FollowEvent)
+@_dedupe_webhook_event
 def handle_follow(event):
     welcome_text = (
         "สวัสดีค่ะ! ยินดีต้อนรับสู่ระบบบันทึกรอบเดือน 🌸\n\n"
@@ -137,10 +170,12 @@ def handle_follow(event):
     messaging.send_reply(
         event.reply_token,
         [messaging.TextMessage(text=welcome_text, quick_reply=messaging.get_calendar_quick_reply())],
+        fallback_to=event.source.user_id,
     )
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
+@_dedupe_webhook_event
 def handle_message(event):
     user_id = event.source.user_id
     user_text = event.message.text.strip()
@@ -254,20 +289,22 @@ def handle_message(event):
                     quick_reply=messaging.get_calendar_quick_reply(),
                 )
 
-    messaging.send_reply(event.reply_token, [reply_msg])
+    messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
 
 @handler.add(MessageEvent)
+@_dedupe_webhook_event
 def handle_unsupported_message(event):
     reply_msg = messaging.TextMessage(
         text="ขออภัยค่ะ ตอนนี้น้องบอทยังไม่รองรับข้อความประเภทนี้ 🙏\n\n"
              "📌 สามารถใช้งานได้ง่ายๆ โดยกดเลือกเมนูบน Rich Menu ด้านล่างได้เลยค่ะ",
         quick_reply=messaging.get_calendar_quick_reply(),
     )
-    messaging.send_reply(event.reply_token, [reply_msg])
+    messaging.send_reply(event.reply_token, [reply_msg], fallback_to=event.source.user_id)
 
 
 @handler.add(PostbackEvent)
+@_dedupe_webhook_event
 def handle_postback(event):
     user_id = event.source.user_id
     postback_data = event.postback.data
@@ -278,7 +315,7 @@ def handle_postback(event):
             return
         start_date = datetime.strptime(selected_date_str, "%Y-%m-%d")
         flex_message = process_and_reply(user_id, start_date)
-        messaging.send_reply(event.reply_token, [flex_message])
+        messaging.send_reply(event.reply_token, [flex_message], fallback_to=user_id)
 
     elif postback_data == "action=set_remind_hour":
         selected_time_str = event.postback.params.get("time")
@@ -292,7 +329,7 @@ def handle_postback(event):
             text=f"✅ ตั้งค่าเรียบร้อย! น้องบอทจะแจ้งเตือนเวลา {hour:02d}:00 น. นะคะ 🌸",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
-        messaging.send_reply(event.reply_token, [reply_msg])
+        messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
     elif postback_data.startswith("action=set_remind"):
         days = int(postback_data.split("days=")[1])
@@ -303,7 +340,7 @@ def handle_postback(event):
             text=f"✅ ตั้งค่าเรียบร้อย! น้องบอทจะแจ้งเตือนล่วงหน้า {days} วัน ก่อนรอบเดือนถัดไปนะคะ 🌸",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
-        messaging.send_reply(event.reply_token, [reply_msg])
+        messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
     elif postback_data == "action=confirm_delete_last":
         if db.delete_last_log(user_id):
@@ -314,14 +351,14 @@ def handle_postback(event):
             )
         else:
             reply_msg = messaging.TextMessage(text="ไม่พบข้อมูลให้ลบค่ะ 😊", quick_reply=messaging.get_calendar_quick_reply())
-        messaging.send_reply(event.reply_token, [reply_msg])
+        messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
     elif postback_data == "action=cancel_delete_last":
         reply_msg = messaging.TextMessage(
             text="❌ ยกเลิกการลบข้อมูลเรียบร้อยแล้ว ข้อมูลของคุณยังปลอดภัยอยู่ค่ะ 🌸",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
-        messaging.send_reply(event.reply_token, [reply_msg])
+        messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
     elif postback_data.startswith("action=select_delete"):
         params = _parse_postback_params(postback_data)
@@ -331,7 +368,7 @@ def handle_postback(event):
                  "การดำเนินการนี้ไม่สามารถย้อนกลับได้ค่ะ",
             quick_reply=messaging.get_confirm_delete_specific_quick_reply(params["id"]),
         )
-        messaging.send_reply(event.reply_token, [reply_msg])
+        messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
     elif postback_data.startswith("action=confirm_delete_specific"):
         params = _parse_postback_params(postback_data)
@@ -346,7 +383,7 @@ def handle_postback(event):
                 text="ไม่พบข้อมูลรายการนี้ค่ะ อาจถูกลบไปแล้ว",
                 quick_reply=messaging.get_calendar_quick_reply(),
             )
-        messaging.send_reply(event.reply_token, [reply_msg])
+        messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
     elif postback_data == "action=confirm_reset":
         db.reset_user_logs(user_id)
@@ -356,11 +393,11 @@ def handle_postback(event):
             text="🧹 ล้างประวัติทั้งหมดเรียบร้อยแล้วค่ะ!\nคุณสามารถเริ่มบันทึกรอบเดือนใหม่ได้ทันทีนะคะ 😊",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
-        messaging.send_reply(event.reply_token, [reply_msg])
+        messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
 
     elif postback_data == "action=cancel_reset":
         reply_msg = messaging.TextMessage(
             text="❌ ยกเลิกการล้างข้อมูลเรียบร้อยแล้ว ข้อมูลของคุณยังปลอดภัยอยู่ค่ะ 🌸",
             quick_reply=messaging.get_calendar_quick_reply(),
         )
-        messaging.send_reply(event.reply_token, [reply_msg])
+        messaging.send_reply(event.reply_token, [reply_msg], fallback_to=user_id)
