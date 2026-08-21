@@ -98,9 +98,6 @@ def get_calendar_quick_reply():
 def get_settings_quick_reply():
     return QuickReply(
         items=[
-            QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 1 วัน", data="action=set_remind&days=1")),
-            QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 3 วัน", data="action=set_remind&days=3")),
-            QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 5 วัน", data="action=set_remind&days=5")),
             QuickReplyItem(
                 action=DatetimePickerAction(
                     label="⏰ ตั้งเวลาแจ้งเตือน",
@@ -109,6 +106,9 @@ def get_settings_quick_reply():
                     initial="08:00",
                 )
             ),
+            QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 1 วัน", data="action=set_remind&days=1")),
+            QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 3 วัน", data="action=set_remind&days=3")),
+            QuickReplyItem(action=PostbackAction(label="เตือนล่วงหน้า 5 วัน", data="action=set_remind&days=5")),
         ]
     )
 

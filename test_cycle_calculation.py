@@ -40,6 +40,19 @@ def test_ignores_gaps_outside_the_plausible_cycle_range():
         assert db.calculate_avg_cycle("u1") == 28
 
 
+def test_ignores_a_multi_month_gap_from_a_stale_first_log():
+    # A user logs once, then doesn't log again for 5-6 months. That gap
+    # (151/181 days here) is just as implausible as a too-short one and
+    # gets dropped the same way -- it does NOT get averaged in as if it
+    # were the user's real cycle length, and the stale log is not deleted
+    # (only save_period_log's MAX_PERIOD_LOGS_PER_USER trim ever removes
+    # rows, which doesn't kick in until more than 6 exist).
+    with patch.object(db, "get_user_logs", return_value=_logs("2026-06-01", "2026-01-01")):
+        assert db.calculate_avg_cycle("u1") == 28
+    with patch.object(db, "get_user_logs", return_value=_logs("2026-07-01", "2026-01-01")):
+        assert db.calculate_avg_cycle("u1") == 28
+
+
 def test_calculation_window_matches_stored_history_limit():
     with patch.object(db, "get_user_logs") as mock_get_logs:
         mock_get_logs.return_value = _logs("2026-08-01", "2026-07-01")
