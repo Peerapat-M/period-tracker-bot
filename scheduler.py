@@ -1,8 +1,7 @@
 import logging
-import sys
 from datetime import datetime, timedelta
 
-from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED, EVENT_JOB_MISSED
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -43,31 +42,18 @@ scheduler = BackgroundScheduler(
 
 
 def _log_job_event(event):
+    # A job that's due but doesn't run leaves no trace anywhere else -- this
+    # is what would have surfaced today's misfire/cold-start issue immediately
+    # instead of needing a live debugging session to notice.
     if event.code == EVENT_JOB_MISSED:
-        logger.warning("DEBUG: job %s missed its scheduled run at %s", event.job_id, event.scheduled_run_time)
-    elif event.code == EVENT_JOB_ERROR:
-        logger.error("DEBUG: job %s raised an exception: %s", event.job_id, event.exception)
+        logger.warning("Job %s missed its scheduled run at %s", event.job_id, event.scheduled_run_time)
     else:
-        logger.info("DEBUG: job %s ran (scheduled for %s)", event.job_id, event.scheduled_run_time)
+        logger.error("Job %s raised an exception: %s", event.job_id, event.exception)
 
 
-scheduler.add_listener(_log_job_event, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+scheduler.add_listener(_log_job_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
 
-
-def _heartbeat():
-    # print(), not logger.info(): bypasses the logging module's handler/level/
-    # propagation config entirely, to isolate whether missing scheduler logs
-    # are a logging-config issue or the background thread itself not running.
-    print("PRINTDEBUG: scheduler heartbeat -- background thread is alive", flush=True)
-    print("PRINTDEBUG: scheduler heartbeat (stderr)", file=sys.stderr, flush=True)
-
-
-print("PRINTDEBUG: about to call scheduler.start()", flush=True)
 scheduler.start()
-print(f"PRINTDEBUG: scheduler.start() returned, state={scheduler.state}", flush=True)
-logger.info("DEBUG: scheduler.start() returned, state=%s", scheduler.state)
-scheduler.add_job(_heartbeat, "interval", seconds=60, id="_debug_heartbeat", replace_existing=True)
-print("PRINTDEBUG: heartbeat job added", flush=True)
 
 
 def _reminder_job_id(user_id):
