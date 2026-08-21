@@ -270,24 +270,30 @@ def send_period_reminder(user_id, next_period_str, days_before):
              f"อย่าลืมเตรียมพกผ้าอนามัยไว้ล่วงหน้านะคะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    delivered = _safe_push(user_id, [user_msg], "แจ้งเตือน")
+    if not _safe_push(user_id, [user_msg], "แจ้งเตือน"):
+        raise RuntimeError(f"send_period_reminder to {user_id} was not delivered")
 
+
+def send_period_reminder_partner_care(user_id, next_period_str, days_before):
+    """Scheduled as its own job (not a second push inside send_period_reminder)
+    so a partner-push failure retries independently -- otherwise retrying
+    the whole reminder on a partner-only failure would resend the user's
+    own message, which had already gone out fine. Looks up the partner at
+    fire time, not schedule time, so an unpair in between means no message.
+    """
     partner_id = db.get_partner_id(user_id)
-    if partner_id:
-        partner_msg = TextMessage(
-            text=f"🌸 Care Mode แจ้งเตือนคนรัก\n\n"
-                 f"อีก {days_before} วันจะถึงกำหนดรอบเดือนของแฟนคุณแล้วนะคะ ({next_period_str})\n\n"
-                 f"💡 คำแนะนำในการดูแล:\n"
-                 f"• เตรียมกระเป๋าน้ำร้อนหรือเครื่องดื่มอุ่นๆ ไว้ให้\n"
-                 f"• ช่วยซัพพอร์ตและคอยเอาใจใส่เป็นพิเศษในช่วงนี้นะคะ 💕"
-        )
-        delivered = _safe_push(partner_id, [partner_msg], "Care Mode หาแฟน") and delivered
+    if not partner_id:
+        return
 
-    if not delivered:
-        # Raising (instead of swallowing) is what makes run_due_jobs() leave
-        # this job in place for a retry on the next poll rather than
-        # dropping it as done -- see messaging.py's _safe_push.
-        raise RuntimeError(f"send_period_reminder to {user_id} was not fully delivered")
+    partner_msg = TextMessage(
+        text=f"🌸 Care Mode แจ้งเตือนคนรัก\n\n"
+             f"อีก {days_before} วันจะถึงกำหนดรอบเดือนของแฟนคุณแล้วนะคะ ({next_period_str})\n\n"
+             f"💡 คำแนะนำในการดูแล:\n"
+             f"• เตรียมกระเป๋าน้ำร้อนหรือเครื่องดื่มอุ่นๆ ไว้ให้\n"
+             f"• ช่วยซัพพอร์ตและคอยเอาใจใส่เป็นพิเศษในช่วงนี้นะคะ 💕"
+    )
+    if not _safe_push(partner_id, [partner_msg], "Care Mode หาแฟน"):
+        raise RuntimeError(f"send_period_reminder_partner_care for {user_id} was not delivered")
 
 
 def send_late_period_alert(user_id, next_period_str):

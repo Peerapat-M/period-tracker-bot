@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime, timedelta
 
 from apscheduler.jobstores.base import JobLookupError
@@ -11,39 +12,38 @@ from messaging import (
     send_fertile_window_alert,
     send_late_period_alert,
     send_period_reminder,
+    send_period_reminder_partner_care,
     send_test_date_alert,
 )
 
 logger = logging.getLogger(__name__)
 
+# pool_pre_ping: reminders can be scheduled hours or days out, and
+# DATABASE_URL now points at Supabase's transaction-mode pooler, which can
+# drop an idle backend connection between two jobstore calls that far apart.
+# Without this, the next call reuses the dead pooled connection and raises
+# OperationalError, which APScheduler doesn't retry -- pool_pre_ping tests
+# and transparently replaces it instead.
+#
+# keepalives: pool_pre_ping's own test query can itself hang instead of
+# failing fast when the pooler has dropped the connection as a half-open TCP
+# socket (no RST/FIN sent). These make the OS notice the dead peer and error
+# out within ~50s instead of hanging -- used by every SQLAlchemyJobStore
+# this module creates (both the long-lived one below and the short-lived
+# one run_due_jobs() opens per call), since either can hit the same pooler.
+_JOBSTORE_ENGINE_OPTIONS = {
+    "pool_pre_ping": True,
+    "connect_args": {
+        "keepalives": 1,
+        "keepalives_idle": 10,
+        "keepalives_interval": 10,
+        "keepalives_count": 3,
+    },
+}
+
 scheduler = BackgroundScheduler(
     jobstores={
-        # pool_pre_ping: reminders can be scheduled hours or days out, and
-        # DATABASE_URL now points at Supabase's transaction-mode pooler,
-        # which can drop an idle backend connection between two jobstore
-        # calls that far apart. Without this, the next call reuses the dead
-        # pooled connection and raises OperationalError, which APScheduler
-        # doesn't retry -- pool_pre_ping tests and transparently replaces it
-        # instead.
-        #
-        # keepalives: pool_pre_ping's own test query can itself hang instead
-        # of failing fast when the pooler has dropped the connection as a
-        # half-open TCP socket (no RST/FIN sent) -- the scheduler's background
-        # thread is single-threaded, so one hung pre-ping call there freezes
-        # every job, forever, with nothing logged. These make the OS notice
-        # the dead peer and error out within ~50s instead of hanging.
-        "default": SQLAlchemyJobStore(
-            url=DATABASE_URL,
-            engine_options={
-                "pool_pre_ping": True,
-                "connect_args": {
-                    "keepalives": 1,
-                    "keepalives_idle": 10,
-                    "keepalives_interval": 10,
-                    "keepalives_count": 3,
-                },
-            },
-        ),
+        "default": SQLAlchemyJobStore(url=DATABASE_URL, engine_options=_JOBSTORE_ENGINE_OPTIONS),
     },
     # No job_defaults/misfire_grace_time here: that setting only governs
     # BackgroundScheduler's own timer-driven firing, which is paused below.
@@ -66,6 +66,10 @@ scheduler.start(paused=True)
 
 def _reminder_job_id(user_id):
     return f"reminder_{user_id}"
+
+
+def _partner_care_job_id(user_id):
+    return f"partner_care_{user_id}"
 
 
 def _late_job_id(user_id):
@@ -100,6 +104,16 @@ def schedule_user_reminders(user_id, next_period, fertile_start, fertile_end, te
         (
             _reminder_job_id(user_id),
             send_period_reminder,
+            _at(next_period - timedelta(days=remind_days)),
+            [user_id, next_period_str, remind_days],
+        ),
+        (
+            # Its own job (not just a second push inside send_period_reminder)
+            # so a partner-push failure retries independently -- otherwise
+            # retrying the whole reminder on a partner-only failure would
+            # resend the user's own message, which had already gone out fine.
+            _partner_care_job_id(user_id),
+            send_period_reminder_partner_care,
             _at(next_period - timedelta(days=remind_days)),
             [user_id, next_period_str, remind_days],
         ),
@@ -139,6 +153,7 @@ def schedule_user_reminders(user_id, next_period, fertile_start, fertile_end, te
 def remove_user_reminders(user_id):
     job_ids = (
         _reminder_job_id(user_id),
+        _partner_care_job_id(user_id),
         _late_job_id(user_id),
         _fertile_job_id(user_id),
         _test_date_job_id(user_id),
@@ -148,6 +163,9 @@ def remove_user_reminders(user_id):
             scheduler.remove_job(job_id)
         except JobLookupError:
             pass
+
+
+_RUN_DUE_JOBS_LOCK = threading.Lock()
 
 
 def run_due_jobs():
@@ -165,19 +183,45 @@ def run_due_jobs():
     how overdue, and a job that keeps failing (e.g. the recipient blocked
     the bot) retries forever -- accepted as log noise rather than lost
     reminders, given how rarely pushes actually fail here.
+
+    _RUN_DUE_JOBS_LOCK: non-blocking, so an overlapping call (a slow poll
+    still running when the next one lands, or two pollers hitting the
+    endpoint close together) skips instead of queuing -- Gunicorn runs this
+    app with 4 gthread worker threads (see Procfile), so two /run-due-
+    reminders requests really can execute concurrently; without this, both
+    could fetch the same due job before either removed it and fire it
+    twice. This is in-process only (a plain threading.Lock), which is
+    correct only as long as there's a single worker process -- same caveat
+    as handlers.py's webhook dedupe lock.
     """
-    store = SQLAlchemyJobStore(url=DATABASE_URL)
-    fired = 0
+    if not _RUN_DUE_JOBS_LOCK.acquire(blocking=False):
+        logger.info("run_due_jobs already in progress, skipping this poll")
+        return 0
+
     try:
-        due_jobs = store.get_due_jobs(datetime.now(BANGKOK_TZ))
-        for job in due_jobs:
-            try:
-                job.func(*job.args, **job.kwargs)
-            except Exception:
-                logger.exception("Job %s raised an exception -- will retry next poll", job.id)
-            else:
-                store.remove_job(job.id)
-                fired += 1
-        return fired
+        store = SQLAlchemyJobStore(url=DATABASE_URL, engine_options=_JOBSTORE_ENGINE_OPTIONS)
+        fired = 0
+        try:
+            due_jobs = store.get_due_jobs(datetime.now(BANGKOK_TZ))
+            for job in due_jobs:
+                try:
+                    job.func(*job.args, **job.kwargs)
+                except Exception:
+                    logger.exception("Job %s raised an exception -- will retry next poll", job.id)
+                    continue
+
+                try:
+                    store.remove_job(job.id)
+                except Exception:
+                    # The job ran; losing the row would only mean an extra
+                    # duplicate run next poll, not a lost reminder -- log
+                    # and keep processing the rest of this batch rather
+                    # than aborting it over one removal failure.
+                    logger.exception("Job %s ran but couldn't be removed from the store", job.id)
+                else:
+                    fired += 1
+            return fired
+        finally:
+            store.shutdown()
     finally:
-        store.shutdown()
+        _RUN_DUE_JOBS_LOCK.release()
