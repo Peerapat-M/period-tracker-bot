@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timedelta
 
-from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -46,30 +45,13 @@ scheduler = BackgroundScheduler(
             },
         ),
     },
-    job_defaults={
-        # APScheduler's default grace time is 1 second: if the run_date is
-        # missed by more than that, the job is silently dropped instead of
-        # run late. This process sleeps on Render's free tier between
-        # requests, so a reminder due while asleep is often minutes to hours
-        # overdue by the time a webhook or health check wakes it back up --
-        # widen the window so it still fires (a bit late) instead of vanishing.
-        "misfire_grace_time": 24 * 3600,
-    },
+    # No job_defaults/misfire_grace_time here: that setting only governs
+    # BackgroundScheduler's own timer-driven firing, which is paused below.
+    # run_due_jobs() is what actually fires jobs now, and it has no
+    # staleness concept of its own -- see its docstring.
     timezone=BANGKOK_TZ,
 )
 
-
-def _log_job_event(event):
-    # A job that's due but doesn't run leaves no trace anywhere else -- this
-    # is what would have surfaced today's misfire/cold-start issue immediately
-    # instead of needing a live debugging session to notice.
-    if event.code == EVENT_JOB_MISSED:
-        logger.warning("Job %s missed its scheduled run at %s", event.job_id, event.scheduled_run_time)
-    else:
-        logger.error("Job %s raised an exception: %s", event.job_id, event.exception)
-
-
-scheduler.add_listener(_log_job_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
 
 # paused=True: don't rely on BackgroundScheduler's own timer thread to fire
 # jobs -- on 2026-08-21 it silently stopped processing due jobs after a
@@ -174,17 +156,28 @@ def run_due_jobs():
     used once, and disposed within this call, so it has no opportunity to sit
     idle and go stale like the long-lived one did. Meant to be called from a
     stateless HTTP endpoint hit periodically by an external poller.
+
+    A job is removed only if it ran without raising. messaging.py's send_*
+    functions raise when a push wasn't delivered (instead of swallowing it),
+    so a transient failure leaves the job in place to be retried at the next
+    poll rather than silently dropping that reminder for good. There's no
+    staleness cutoff or retry limit: an old due job still fires no matter
+    how overdue, and a job that keeps failing (e.g. the recipient blocked
+    the bot) retries forever -- accepted as log noise rather than lost
+    reminders, given how rarely pushes actually fail here.
     """
     store = SQLAlchemyJobStore(url=DATABASE_URL)
+    fired = 0
     try:
         due_jobs = store.get_due_jobs(datetime.now(BANGKOK_TZ))
         for job in due_jobs:
             try:
                 job.func(*job.args, **job.kwargs)
             except Exception:
-                logger.exception("Job %s raised an exception", job.id)
-            finally:
+                logger.exception("Job %s raised an exception -- will retry next poll", job.id)
+            else:
                 store.remove_job(job.id)
-        return len(due_jobs)
+                fired += 1
+        return fired
     finally:
         store.shutdown()

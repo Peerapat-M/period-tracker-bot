@@ -46,11 +46,12 @@ def send_reply(reply_token, messages, fallback_to=None):
     first response still reaches the user instead of going out silently.
 
     Deliberately lets a failure of BOTH the reply and the fallback push
-    propagate (unlike _safe_push's proactive notifications, which are fire-
-    and-forget) -- the caller is a webhook event handler, and an exception
+    propagate -- the caller is a webhook event handler, and an exception
     here is what keeps _dedupe_webhook_event from marking a totally failed
     delivery as done and stops it from being silently swallowed with no
-    retry.
+    retry. (_safe_push below never raises itself, but its send_* callers
+    do when a push fails, for the same reason -- run_due_jobs() relies on
+    that to retry at the next poll instead of dropping the job.)
     """
     try:
         with ApiClient(configuration) as api_client:
@@ -65,10 +66,16 @@ def send_reply(reply_token, messages, fallback_to=None):
 
 
 def _safe_push(to, messages, failure_label):
+    """Never raises -- callers decide what a failed push means for them (the
+    send_* notification functions below raise so run_due_jobs() retries at
+    the next poll instead of the job being dropped after a transient error).
+    """
     try:
         send_push(to, messages)
+        return True
     except Exception:
         logger.exception("ส่ง%sล้มเหลว", failure_label)
+        return False
 
 
 # ----------------------------------------------------
@@ -263,20 +270,24 @@ def send_period_reminder(user_id, next_period_str, days_before):
              f"อย่าลืมเตรียมพกผ้าอนามัยไว้ล่วงหน้านะคะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    _safe_push(user_id, [user_msg], "แจ้งเตือน")
+    delivered = _safe_push(user_id, [user_msg], "แจ้งเตือน")
 
     partner_id = db.get_partner_id(user_id)
-    if not partner_id:
-        return
+    if partner_id:
+        partner_msg = TextMessage(
+            text=f"🌸 Care Mode แจ้งเตือนคนรัก\n\n"
+                 f"อีก {days_before} วันจะถึงกำหนดรอบเดือนของแฟนคุณแล้วนะคะ ({next_period_str})\n\n"
+                 f"💡 คำแนะนำในการดูแล:\n"
+                 f"• เตรียมกระเป๋าน้ำร้อนหรือเครื่องดื่มอุ่นๆ ไว้ให้\n"
+                 f"• ช่วยซัพพอร์ตและคอยเอาใจใส่เป็นพิเศษในช่วงนี้นะคะ 💕"
+        )
+        delivered = _safe_push(partner_id, [partner_msg], "Care Mode หาแฟน") and delivered
 
-    partner_msg = TextMessage(
-        text=f"🌸 Care Mode แจ้งเตือนคนรัก\n\n"
-             f"อีก {days_before} วันจะถึงกำหนดรอบเดือนของแฟนคุณแล้วนะคะ ({next_period_str})\n\n"
-             f"💡 คำแนะนำในการดูแล:\n"
-             f"• เตรียมกระเป๋าน้ำร้อนหรือเครื่องดื่มอุ่นๆ ไว้ให้\n"
-             f"• ช่วยซัพพอร์ตและคอยเอาใจใส่เป็นพิเศษในช่วงนี้นะคะ 💕"
-    )
-    _safe_push(partner_id, [partner_msg], "Care Mode หาแฟน")
+    if not delivered:
+        # Raising (instead of swallowing) is what makes run_due_jobs() leave
+        # this job in place for a retry on the next poll rather than
+        # dropping it as done -- see messaging.py's _safe_push.
+        raise RuntimeError(f"send_period_reminder to {user_id} was not fully delivered")
 
 
 def send_late_period_alert(user_id, next_period_str):
@@ -286,7 +297,8 @@ def send_late_period_alert(user_id, next_period_str):
              f"ประจำเดือนมาหรือยังคะ? สามารถกดบันทึกวันแรกผ่านปฏิทินได้เลยนะคะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    _safe_push(user_id, [msg], "แจ้งเตือนรอบเดือนเลท")
+    if not _safe_push(user_id, [msg], "แจ้งเตือนรอบเดือนเลท"):
+        raise RuntimeError(f"send_late_period_alert to {user_id} was not delivered")
 
 
 def send_fertile_window_alert(user_id, fertile_start_str, fertile_end_str):
@@ -296,7 +308,8 @@ def send_fertile_window_alert(user_id, fertile_start_str, fertile_end_str):
              f"หากกำลังวางแผนมีบุตรหรือคุมกำเนิด ควรวางแผนล่วงหน้าในช่วงนี้ค่ะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    _safe_push(user_id, [msg], "แจ้งเตือนช่วงไข่ตก")
+    if not _safe_push(user_id, [msg], "แจ้งเตือนช่วงไข่ตก"):
+        raise RuntimeError(f"send_fertile_window_alert to {user_id} was not delivered")
 
 
 def send_test_date_alert(user_id, test_date_str):
@@ -306,4 +319,5 @@ def send_test_date_alert(user_id, test_date_str):
              f"หากผลตรวจไม่ชัดเจน ลองตรวจซ้ำอีกครั้งในอีกไม่กี่วันได้ค่ะ 🌸",
         quick_reply=get_calendar_quick_reply(),
     )
-    _safe_push(user_id, [msg], "แจ้งเตือนวันตรวจครรภ์")
+    if not _safe_push(user_id, [msg], "แจ้งเตือนวันตรวจครรภ์"):
+        raise RuntimeError(f"send_test_date_alert to {user_id} was not delivered")
