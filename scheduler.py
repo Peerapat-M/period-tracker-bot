@@ -26,7 +26,25 @@ scheduler = BackgroundScheduler(
         # pooled connection and raises OperationalError, which APScheduler
         # doesn't retry -- pool_pre_ping tests and transparently replaces it
         # instead.
-        "default": SQLAlchemyJobStore(url=DATABASE_URL, engine_options={"pool_pre_ping": True}),
+        #
+        # keepalives: pool_pre_ping's own test query can itself hang instead
+        # of failing fast when the pooler has dropped the connection as a
+        # half-open TCP socket (no RST/FIN sent) -- the scheduler's background
+        # thread is single-threaded, so one hung pre-ping call there freezes
+        # every job, forever, with nothing logged. These make the OS notice
+        # the dead peer and error out within ~50s instead of hanging.
+        "default": SQLAlchemyJobStore(
+            url=DATABASE_URL,
+            engine_options={
+                "pool_pre_ping": True,
+                "connect_args": {
+                    "keepalives": 1,
+                    "keepalives_idle": 10,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 3,
+                },
+            },
+        ),
     },
     job_defaults={
         # APScheduler's default grace time is 1 second: if the run_date is
