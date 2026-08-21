@@ -24,6 +24,15 @@ scheduler = BackgroundScheduler(
         # instead.
         "default": SQLAlchemyJobStore(url=DATABASE_URL, engine_options={"pool_pre_ping": True}),
     },
+    job_defaults={
+        # APScheduler's default grace time is 1 second: if the run_date is
+        # missed by more than that, the job is silently dropped instead of
+        # run late. This process sleeps on Render's free tier between
+        # requests, so a reminder due while asleep is often minutes to hours
+        # overdue by the time a webhook or health check wakes it back up --
+        # widen the window so it still fires (a bit late) instead of vanishing.
+        "misfire_grace_time": 24 * 3600,
+    },
     timezone=BANGKOK_TZ,
 )
 scheduler.start()
