@@ -180,6 +180,18 @@ def _parse_postback_params(postback_data):
     return dict(p.split("=", 1) for p in postback_data.split("&"))
 
 
+def _round_to_ten_minutes(hour, minute):
+    """LINE's time picker has no way to restrict its minute wheel to a fixed
+    step, so round whatever was picked to the nearest 10 minutes here
+    instead (ties round up).
+    """
+    minute = ((minute + 5) // 10) * 10
+    if minute == 60:
+        minute = 0
+        hour = (hour + 1) % 24
+    return hour, minute
+
+
 def show_latest_prediction(user_id):
     result = _latest_prediction(user_id)
     if not result:
@@ -357,7 +369,7 @@ def handle_postback(event):
         if not selected_time_str:
             return
         hour_str, minute_str = selected_time_str.split(":")
-        hour, minute = int(hour_str), int(minute_str)
+        hour, minute = _round_to_ten_minutes(int(hour_str), int(minute_str))
         db.set_user_remind_hour(user_id, hour)
         db.set_user_remind_minute(user_id, minute)
         _reschedule_reminders(user_id)
