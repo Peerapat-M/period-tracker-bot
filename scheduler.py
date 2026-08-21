@@ -71,7 +71,15 @@ def _log_job_event(event):
 
 scheduler.add_listener(_log_job_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
 
-scheduler.start()
+# paused=True: don't rely on BackgroundScheduler's own timer thread to fire
+# jobs -- on 2026-08-21 it silently stopped processing due jobs after a
+# settings-change reschedule, with nothing logged, and needed a manual
+# restart to flush them. add_job/remove_job below still write straight
+# through to the jobstore while paused (only STATE_STOPPED defers them), so
+# scheduling still works immediately; run_due_jobs() -- called from an
+# HTTP endpoint hit periodically by an external poller (UptimeRobot) -- is
+# now the only thing that actually executes due jobs.
+scheduler.start(paused=True)
 
 
 def _reminder_job_id(user_id):
@@ -158,3 +166,25 @@ def remove_user_reminders(user_id):
             scheduler.remove_job(job_id)
         except JobLookupError:
             pass
+
+
+def run_due_jobs():
+    """Execute every job whose run_date has passed, using a jobstore with its
+    own fresh connection rather than the module-level `scheduler`'s -- opened,
+    used once, and disposed within this call, so it has no opportunity to sit
+    idle and go stale like the long-lived one did. Meant to be called from a
+    stateless HTTP endpoint hit periodically by an external poller.
+    """
+    store = SQLAlchemyJobStore(url=DATABASE_URL)
+    try:
+        due_jobs = store.get_due_jobs(datetime.now(BANGKOK_TZ))
+        for job in due_jobs:
+            try:
+                job.func(*job.args, **job.kwargs)
+            except Exception:
+                logger.exception("Job %s raised an exception", job.id)
+            finally:
+                store.remove_job(job.id)
+        return len(due_jobs)
+    finally:
+        store.shutdown()

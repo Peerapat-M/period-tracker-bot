@@ -13,6 +13,7 @@ logging.basicConfig(level=logging.INFO)
 
 import db
 import handlers  # noqa: F401  (registers webhook event handlers on import)
+import scheduler as scheduler_module
 from config import handler
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,19 @@ def health():
         logger.exception("Health Check DB Ping Exception")
         return "DB unavailable", 503
     return "OK"
+
+
+@app.route("/run-due-reminders", methods=["GET", "HEAD"])
+def run_due_reminders():
+    # BackgroundScheduler's own timer thread is paused (see scheduler.py) --
+    # this is what actually fires due reminders now, meant to be hit every
+    # few minutes by an external poller (e.g. UptimeRobot) instead.
+    try:
+        fired = scheduler_module.run_due_jobs()
+    except Exception:
+        logger.exception("run_due_jobs Exception")
+        return "error", 503
+    return f"fired {fired}", 200
 
 
 @app.route("/callback", methods=["POST"])
