@@ -4,6 +4,13 @@ import os
 from flask import Flask, abort, request
 from linebot.v3.exceptions import InvalidSignatureError
 
+# Nothing else in this codebase configures logging, so without a handler here
+# every logger.info/.warning/.exception call (including APScheduler's own
+# "job missed" / "error getting due jobs" warnings) has no reliable path to
+# Render's captured output. Configure this before importing handlers, which
+# imports scheduler and starts the background scheduler on import.
+logging.basicConfig(level=logging.INFO)
+
 import db
 import handlers  # noqa: F401  (registers webhook event handlers on import)
 from config import handler
